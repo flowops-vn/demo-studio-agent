@@ -21,8 +21,10 @@ const HELP = 'demo-studio <command>\n\n' +
   '        record (default): headless, writes mp4 + srt + contact sheet\n' +
   '        --live: headed browser + narration on speakers (add --record to also save a video)\n' +
   '        --dry: fast headless pass, no TTS/recording, checks every step resolves\n' +
-  '  serve [--config script.yaml] [--url URL] [--live] [--record] [--dry] [--port 7788] [--cdp 9333] [--out DIR] [--name N]\n' +
+  '  serve [--url URL] [--live] [--record] [--dry] [--storage auth.json] [--provider P] [--voice NAME] [--rate +8%]\n' +
+  '        [--config settings.yaml] [--port 7788] [--cdp 9333] [--out DIR] [--name N]\n' +
   '        long-running session for step-by-step agent control (idle time is cut from the video)\n' +
+  '        live demo: serve --live --url URL, then one `do` per beat improvised from the screen (no script, no dry run)\n' +
   '  do <yaml|json>  |  do -f steps.yaml     send steps to the running session\n' +
   '  look [--app NAME|all]                   numbered visible controls + text (targets: e7, t12)\n' +
   '  snap | peek [--app NAME] | undo | status | stop   aria tree / screenshot / cut last step / finish\n' +
@@ -84,6 +86,9 @@ async function main() {
       if (flags.name) cfg.name = flags.name;
       if (flags.cdp) cfg.cdpPort = Number(flags.cdp);
       if (flags.voice) cfg.voice = { ...(cfg.voice || {}), name: flags.voice };
+      if (flags.provider) cfg.voice = { ...(cfg.voice || {}), provider: flags.provider };
+      if (flags.rate) cfg.voice = { ...(cfg.voice || {}), rate: flags.rate };
+      if (flags.storage) cfg.storageState = resolve(flags.storage);
       const { session } = await serve(cfg, port);
       if (flags.url) await session.step({ goto: flags.url });
       session.idle();

@@ -35,7 +35,7 @@ Without the plugin: `npm install` here, link `bin/demo-studio` onto your PATH an
 
 ```
 demo-studio run demo.yaml            # record (headless) → demo-out/<name>-<ts>/<name>.mp4
-demo-studio run demo.yaml --live     # present live
+demo-studio serve --live --url <url>   # present live: then `demo-studio do` one beat at a time (no script)
 demo-studio run demo.yaml --dry      # 5-second validation pass
 demo-studio serve --url URL          # agent-driven session; do / snap / peek / undo / stop
 demo-studio voices vi | say "…" | auth URL --save auth.json
