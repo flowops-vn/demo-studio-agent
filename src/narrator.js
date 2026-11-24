@@ -30,8 +30,14 @@ export class Narrator {
     Object.assign(this, { voice, live, dry, clock, onCaption, captions });
     this.segments = []; this.pending = Promise.resolve(); this.speaking = false;
   }
-  async durationOf(text) { return this.dry ? Math.min(400, 30 * text.length) : (await synth(text, this.voice)).ms; }
-  prepare(texts) { return this.dry ? null : synthAll(texts, this.voice); }
+  async durationOf(text, voice = this.voice) { return this.dry ? Math.min(400, 30 * text.length) : (await synth(text, voice)).ms; }
+  // items: strings (default voice) or {text, voice} (a dialogue line spoken by another voice).
+  prepare(items) {
+    if (this.dry) return null;
+    const groups = new Map();
+    for (const it of items) { const v = typeof it === 'string' ? this.voice : it.voice || this.voice, k = JSON.stringify(v); if (!groups.has(k)) groups.set(k, { v, texts: [] }); groups.get(k).texts.push(typeof it === 'string' ? it : it.text); }
+    return Promise.all([...groups.values()].map(g => synthAll(g.texts, g.v)));
+  }
   // Starts speaking after any earlier narration ends; resolves when this one ends.
   // Returns a promise for the end of speech with .started resolving when audio begins.
   say(text, opts = {}) {
@@ -42,8 +48,7 @@ export class Narrator {
     return run;
   }
   // Live sessions cannot wait on a slow TTS service: past the budget, fall back to the local voice.
-  async clipFor(text) {
-    const v = this.voice;
+  async clipFor(text, v = this.voice) {
     if (this.dry) return { file: null, ms: Math.min(400, 30 * text.length) };
     const primary = synth(text, v);
     // Local VieNeu synthesizes a sentence in ~1–3 s on a laptop CPU: give it longer before falling back.
@@ -55,14 +60,15 @@ export class Narrator {
     this.fallbacks = (this.fallbacks || 0) + 1;
     return synth(text, { provider: 'say', name: v.fallbackVoice || 'Linh', wpm: v.fallbackWpm });
   }
-  async _say(text, { caption = this.captions, markStarted } = {}) {
-    const clip = await this.clipFor(text);
+  async _say(text, { caption = this.captions, markStarted, voice, label } = {}) {
+    const clip = await this.clipFor(text, voice || this.voice);
     this.speaking = true;
     markStarted?.();
     const start = this.clock();
-    const chunks = chunkText(text), total = chunks.reduce((s, c) => s + c.length, 0) || 1;
+    // Dialogue lines carry the speaker's name in the caption ("Chị Lan: …"); the voice does not say it.
+    const chunks = chunkText(text).map((c, i) => (label && i === 0 ? label + ': ' + c : c)), total = chunks.reduce((s, c) => s + c.length, 0) || 1;
     let at = 0; const timed = chunks.map(c => { const s = at; at += clip.ms * c.length / total; return { text: c, start: start + s, end: start + at }; });
-    const seg = { text, start, ms: clip.ms, file: clip.file, chunks: timed };
+    const seg = { text, ...(label ? { speaker: label } : {}), start, ms: clip.ms, file: clip.file, chunks: timed };
     this.segments.push(seg);
     const timers = [];
     if (caption) { let acc = 0; for (const c of timed) { const d = acc; timers.push(setTimeout(() => this.onCaption?.(c.text), d)); acc += c.end - c.start; } }

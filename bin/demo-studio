@@ -6,7 +6,8 @@ import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright-core';
 import YAML from 'yaml';
-import { loadScript, runScript } from '../src/runner.js';
+import { loadScript, runScript, lintScript } from '../src/runner.js';
+import { spoken } from '../src/speech.js';
 import { serve } from '../src/server.js';
 import { listVoices, synth, stopWorkers } from '../src/tts.js';
 import { applyProjectTheme, findThemeFile, initTheme, previewTheme, THEME_FILE } from '../src/theme.js';
@@ -26,6 +27,7 @@ const HELP = 'demo-studio <command>\n\n' +
   '  look [--app NAME|all]                   numbered visible controls + text (targets: e7, t12)\n' +
   '  snap | peek [--app NAME] | undo | status | stop   aria tree / screenshot / cut last step / finish\n' +
   '        multi-app scripts declare apps: {driver: {url, device: phone, storageState}, …}; steps pick one with on: driver\n' +
+  '  lint <script.yaml> [--spoken]           speech review of the narration (+ what the voice will actually read)\n' +
   '  theme init [--url URL] [--dir REPO] [--storage auth.json] [--force]\n' +
   '        derive the codebase\'s look (accent, font, logo, wallpaper) into REPO/.demo-studio/theme.yaml; run/serve pick it up\n' +
   '  theme preview [--url URL] [--storage auth.json]   PNGs of the theme on the app + title card, for review\n' +
@@ -36,7 +38,7 @@ const HELP = 'demo-studio <command>\n\n' +
   '  auth <url> --save auth.json             log in by hand in a real window; saves storageState\n';
 
 const argv = process.argv.slice(2);
-const BOOL = new Set(['json', 'no-observe', 'live', 'dry', 'record', 'headed', 'keep-partial', 'no-play', 'force']);
+const BOOL = new Set(['json', 'no-observe', 'live', 'dry', 'record', 'headed', 'keep-partial', 'no-play', 'force', 'spoken']);
 const cmd = argv.shift();
 const flags = {}, pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -107,6 +109,15 @@ async function main() {
     case 'undo': return print(await api('/undo', { method: 'POST' }));
     case 'status': return print(await api('/status'));
     case 'stop': return print(await api('/stop', { method: 'POST' }));
+    case 'lint': {
+      if (!pos[0]) throw new Error('usage: demo-studio lint <script.yaml> [--spoken]');
+      const doc = await loadScript(pos[0]);
+      const l = lintScript(doc);
+      const lines = ['narration: ' + l.syllables + ' syllables, ~' + l.estSeconds + ' s at 210/min' + (doc.projectPronounce ? ' (pronounce: ' + doc.projectPronounce + ')' : ''), ...(l.warnings.length ? l.warnings : ['no speech notes'])];
+      if (flags.spoken) (doc.steps || []).forEach((s, i) => { const t = typeof s === 'string' ? s : s?.say; if (!t) return; const sp = spoken(t, { lang: doc.locale || 'vi', pronounce: { ...(doc.pronounce || {}), ...(doc.voice?.pronounce || {}) } }); if (sp !== t) lines.push('#' + i + ' ' + t + '\n   voice: ' + sp); });
+      print(lines.join('\n'));
+      return;
+    }
     case 'theme': {
       const sub = pos[0] || 'show';
       const gitRoot = d => { try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return d; } };

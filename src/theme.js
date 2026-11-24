@@ -13,12 +13,14 @@ export const THEME_FILE = join('.demo-studio', 'theme.yaml');
 // Keys that style the overlay; everything else in the file (frame, source…) is handled separately.
 const OVERLAY_KEYS = ['accent', 'onAccent', 'ink', 'font', 'surface', 'onSurface', 'radius', 'logo', 'logoBg', 'cursor', 'chapterSticky', 'dim'];
 
-export function findThemeFile(...starts) {
+export const PRONOUNCE_FILE = join('.demo-studio', 'pronounce.yaml');
+export const findThemeFile = (...starts) => findProjectFile(THEME_FILE, ...starts);
+export function findProjectFile(rel, ...starts) {
   const stop = homedir();
   for (const s of starts.filter(Boolean)) {
     let d = resolve(s);
     for (;;) {
-      const f = join(d, THEME_FILE);
+      const f = join(d, rel);
       if (existsSync(f)) return f;
       const up = dirname(d);
       if (up === d || d === stop) break;
@@ -47,6 +49,9 @@ export async function loadThemeFile(file) {
 
 // Merge the project theme under the script's own settings (script wins). theme: false opts out.
 export async function applyProjectTheme(doc, ...starts) {
+  // How the voice says this product's names and codes: .demo-studio/pronounce.yaml ({word: spoken form}).
+  const pf = findProjectFile(PRONOUNCE_FILE, ...starts);
+  if (pf) { doc.pronounce = { ...(YAML.parse(await readFile(pf, 'utf8')) || {}), ...(doc.pronounce || {}) }; doc.projectPronounce = pf; }
   if (doc.theme === false) { doc.theme = {}; return null; }
   const file = findThemeFile(...starts);
   if (!file) return null;

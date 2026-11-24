@@ -148,7 +148,9 @@ Don't use serve for live presenting: the audience would watch the agent think.
 name: tao-don-ai
 baseURL: http://localhost:3110          # goto paths are relative to this
 viewport: [1440, 810]                  # CSS px; rendered to output 1920x1080
-voice: { provider: edge, name: vi-VN-HoaiMyNeural, rate: "+5%" }   # male: vi-VN-NamMinhNeural
+voice: { provider: edge, name: vi-VN-HoaiMyNeural, rate: "+8%" }   # male: vi-VN-NamMinhNeural; normalize: false reads text verbatim
+voices: { khach: { name: vi-VN-NamMinhNeural, label: "Anh Minh" } }   # optional extra voices for role-play lines (as: khach)
+pronounce: { LSP: "lờ ét pê" }         # extra readings; codebase-wide ones live in .demo-studio/pronounce.yaml
 theme: { cursor: halo }                # overrides on top of .demo-studio/theme.yaml; cursor: halo|arrow|dot; chapterSticky: true
 autoZoom: true                         # Screen Studio-style: zoom in on clicks/typing, out on overview beats (or a scale, e.g. 1.6)
 frame: { padding: 72, radius: 20 }     # default from the project theme; background: aurora|midnight|sunset|mist|ocean|#hex|linear:#a,#b|image.jpg; false = full-bleed
@@ -177,7 +179,7 @@ steps:
 Step keys (several per step run in written order; `say` starts first and the step ends when
 both speech and actions finish):
 
-- Narration: `say` (also shown as caption) · `async: true` (don't wait for speech) · `lead: ms` · `hold: ms` · `keep: true` (don't auto-clear previous annotations)
+- Narration: `say` (also shown as caption) · `as: name` (line spoken by one of `voices:`, caption prefixed with its label) · `async: true` (don't wait for speech) · `lead: ms` · `hold: ms` · `keep: true` (don't auto-clear previous annotations)
 - Browser: `goto` · `click` · `dblclick` · `hover` · `type {…target, text, enter?, fast?}` · `fill` · `select {…target, value|label}` · `check` · `upload {…target, files}` · `press: "Control+K"` (shows key chips) · `scroll {to: target} | {y: 600} | {within: target, y}` · `wait: ms | target | {url} | {gone: target} | {idle: true}` · `eval: js`
 - Annotations: `spotlight` · `highlight` · `callout {…target, text, title?, placement?}` · `zoom: target | {…, scale} | out` · `caption: text|null` · `clear: true` · value `off` removes one kind
 - Hand-drawn ink (draw-on animation, tracks the element): `circle` · `box` · `underline` · `arrow {…target, text?, from?: top-left|bottom-right|left…, length?}` — all accept `color`, `width`, `ttl` (auto-erase ms) · `draw: {points: [[x,y]…], color?, ms?, ttl?}` freehand in visible-screen px (also on slides)
@@ -189,14 +191,23 @@ Targets: an observation id (`e7`, `t12`, `{node: e7}`) in serve sessions, a Play
 object: `{role, name}`, `{label}`, `{placeholder}`, `{text}`, `{testId}`, `{sel}`, `{ref: e12}` (serve
 only), plus `nth`, `exact`, `within`.
 
-## Narration rules
+## Narration (spoken Vietnamese)
 
-- Write how a presenter talks: short sentences (8–20 words), one idea per step, in the
-  customer's language. Spell out numbers/codes the voice might misread ("chín mươi tư phần
-  trăm", "đơn một nghìn không trăm hai mươi ba").
-- Talk about the benefit, not the click ("AI tự điền tuyến và loại xe" beats "bấm nút Gợi ý").
-- Every few beats, show something on screen that matches the sentence (spotlight/callout/zoom).
-- Opening title card + 2–5 chapters + closing sentence; 1–3 minutes total.
+Read ${CLAUDE_PLUGIN_ROOT}/skills/demo-video/NARRATION.md before writing a script: structure, forms of
+address, sentence patterns and pace, taken from professional Vietnamese vendor tutorials. The short version:
+
+- Open with a greeting, a hook (pain, stakes or a question), the goal and a roadmap of 2–5 steps. Close with
+  a recap, a wish and the next step.
+- One way of addressing the audience for the whole video (anh chị / quý khách / bạn); never "người dùng".
+- One idea per sentence, 8–25 syllables. Say the location before the action ("Tại màn hình Đơn hàng,
+  anh chị bấm Tạo đơn"), then the result and why it matters.
+- Talk about the benefit, not the click. Show something on screen that matches every few sentences.
+- Write numbers, money, dates, codes and acronyms as they appear on screen: captions keep them, and the voice
+  reads the spoken form ("230.000đ" is read "hai trăm ba mươi nghìn đồng", "DH-1021" "đê hát, một không hai một").
+  Product names go in the codebase's `.demo-studio/pronounce.yaml`.
+- Check with `demo-studio lint script.yaml --spoken` (also printed by `run --dry`): long sentences, written-style
+  wording, mixed forms of address, acronyms with no known reading, and what the voice will actually say.
+- Role-play scenes: `voices: {khach: {name: "Hải Đăng", label: "Anh Minh"}}` plus `as: khach` on a step.
 
 ## Gotchas
 
