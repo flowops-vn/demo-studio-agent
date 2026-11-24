@@ -7,7 +7,7 @@ Narrated, annotated browser demos that an AI agent can produce end to end.
   captions (burned in + .srt), mp4 chapters and a contact sheet for self-review.
 
 Built on Playwright (system Chrome via `channel: chrome`), Playwright's screencast frames,
-Chrome pinch-zoom, Microsoft Edge neural TTS (free, good Vietnamese) and ffmpeg.
+Chrome pinch-zoom, Microsoft Edge neural TTS (free, good Vietnamese) or local VieNeu-TTS, and ffmpeg.
 
 ## Install (Claude Code plugin)
 
@@ -20,6 +20,10 @@ The plugin adds the `demo-video` skill and puts `demo-studio` on the PATH of Cla
 dependencies are installed by Claude Code). Once per machine: `brew install ffmpeg` and
 `demo-studio install` (Chrome for Testing, for headless recordings). A SessionStart hook reports
 anything missing. Node 20+.
+
+Voices: Edge neural voices by default (online, no key). `provider: vieneu` runs VieNeu-TTS v3 Turbo
+locally on the CPU (Vietnamese, 25 preset voices, `demo-studio voices vieneu`); it needs `uv` and downloads
+~0.6 GB of model files on first use.
 
 Optional TTS keys (Edge voices need none): `DEMO_TTS_BASE_URL` + `DEMO_TTS_API_KEY` for an
 OpenAI-compatible `/audio/speech`, `DEMO_TTS_GEMINI_KEY` for Gemini.

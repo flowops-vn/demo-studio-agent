@@ -5,6 +5,8 @@ import { mkdir, rename, rm, writeFile, stat, mkdtemp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { run } from './proc.js';
 
 export const CACHE = process.env.DEMO_STUDIO_CACHE || join(homedir(), '.cache', 'demo-studio', 'tts');
@@ -30,7 +32,7 @@ async function synthOnce(text, voice) {
   const file = join(CACHE, key + '.mp3');
   if (!existsSync(file) || (await stat(file)).size < 200) {
     const p = PROVIDERS[voice.provider];
-    if (!p) throw new Error('unknown tts provider ' + voice.provider + ' (edge|say|openai|gemini)');
+    if (!p) throw new Error('unknown tts provider ' + voice.provider + ' (edge|say|vieneu|openai|gemini)');
     let lastErr;
     for (let i = 0; i < 5; i++) {
       try { await p(text, voice, file); lastErr = null; break; }
@@ -56,7 +58,65 @@ async function toMp3(src, dst) {
   await rename(dst + '.tmp.mp3', dst);
 }
 
+// ---- VieNeu-TTS (local, Vietnamese, CPU/ONNX) -------------------------------------------
+// One long-lived Python worker (model loaded once) fed JSON lines. Started with uv so nothing has
+// to be installed by hand: uv builds a cached env with the `vieneu` package; the model (~0.5 GB)
+// is downloaded from Hugging Face on first use.
+const VIENEU_DEFAULT = 'Mai Anh';
+let vn = null;
+function vieneuWorker(v) {
+  if (vn && !vn.dead) return vn;
+  const script = fileURLToPath(new URL('./vieneu_worker.py', import.meta.url));
+  const py = v.python || process.env.DEMO_TTS_VIENEU_PYTHON;
+  const [cmd, args] = py ? [py, [script]] : ['uv', ['run', '--quiet', '--python', '3.12', '--with', 'vieneu', 'python', script]];
+  const proc = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, VIENEU_PRECISION: v.precision || process.env.DEMO_TTS_VIENEU_PRECISION || 'fp32' } });
+  const w = { proc, dead: false, next: 1, waiting: new Map(), err: '' };
+  let buf = '', markReady, failReady;
+  w.ready = new Promise((res, rej) => { markReady = res; failReady = rej; });
+  w.ready.catch(() => {});
+  proc.stdout.on('data', d => {
+    buf += d; let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+      if (!line.startsWith('{')) continue;
+      let m; try { m = JSON.parse(line); } catch { continue; }
+      if (m.ready) { w.voices = m.voices; markReady(m); continue; }
+      const job = w.waiting.get(m.id); if (!job) continue;
+      w.waiting.delete(m.id); m.ok ? job.res() : job.rej(new Error(m.error));
+    }
+  });
+  proc.stderr.on('data', d => { w.err = (w.err + d).slice(-2000); });
+  const die = e => {
+    w.dead = true;
+    const err = new Error('vieneu worker stopped: ' + (e?.message || w.err.trim().split('\n').slice(-3).join(' | ') || 'exit'));
+    failReady(err); for (const j of w.waiting.values()) j.rej(err); w.waiting.clear();
+  };
+  proc.on('exit', () => die()); proc.on('error', die);
+  proc.stdin.on('error', () => {});
+  return (vn = w);
+}
+// Start the worker (and the model download/load) early, e.g. when a session opens.
+export async function vieneuVoices(v = { provider: 'vieneu' }) { const w = vieneuWorker(v); await w.ready; return w.voices || []; }
+export function prewarm(voice) { if (voice?.provider === 'vieneu') vieneuWorker(voice).ready.catch(() => {}); }
+export function stopWorkers() { if (vn && !vn.dead) { vn.proc.stdin.end(); vn.proc.kill(); } }
+
+// "+10%" / "-5%" → ffmpeg atempo factor (VieNeu has no rate control of its own).
+const tempoOf = rate => { const m = /^([+-]?\d+(?:\.\d+)?)%$/.exec(String(rate || '').trim()); return m ? Math.min(2, Math.max(0.5, 1 + Number(m[1]) / 100)) : 1; };
+
 const PROVIDERS = {
+  async vieneu(text, v, file) {
+    const w = vieneuWorker(v);
+    await w.ready;
+    const wav = file + '.wav', id = w.next++;
+    const name = !v.name || /Neural$/.test(v.name) ? VIENEU_DEFAULT : v.name;
+    await new Promise((res, rej) => {
+      w.waiting.set(id, { res, rej });
+      w.proc.stdin.write(JSON.stringify({ id, text, voice: name, out: wav, temperature: v.temperature }) + '\n');
+    });
+    const t = tempoOf(v.rate);
+    await run('ffmpeg', ['-y', '-v', 'error', '-i', wav, ...(t !== 1 ? ['-af', 'atempo=' + t] : []), '-ac', '1', '-ar', '24000', '-b:a', '96k', file + '.tmp.mp3']);
+    await rename(file + '.tmp.mp3', file); await rm(wav, { force: true });
+  },
   // Microsoft Edge read-aloud voices: free, no key, good Vietnamese (HoaiMy, NamMinh).
   async edge(text, v, file) {
     const { MsEdgeTTS, OUTPUT_FORMAT } = await import('msedge-tts');

@@ -46,7 +46,8 @@ export class Narrator {
     const v = this.voice;
     if (this.dry) return { file: null, ms: Math.min(400, 30 * text.length) };
     const primary = synth(text, v);
-    const budget = v.budgetMs ?? (this.live ? 1500 : 0);
+    // Local VieNeu synthesizes a sentence in ~1–3 s on a laptop CPU: give it longer before falling back.
+    const budget = v.budgetMs ?? (this.live ? (v.provider === 'vieneu' ? 6000 : 1500) : 0);
     if (!budget || v.provider === 'say' || v.fallback === false) return primary;
     const first = await Promise.race([primary, new Promise(r => setTimeout(() => r(null), budget))]).catch(() => null);
     if (first) return first;

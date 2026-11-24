@@ -8,7 +8,7 @@ import { chromium } from 'playwright-core';
 import YAML from 'yaml';
 import { loadScript, runScript } from '../src/runner.js';
 import { serve } from '../src/server.js';
-import { listVoices, synth } from '../src/tts.js';
+import { listVoices, synth, stopWorkers } from '../src/tts.js';
 
 const HELP = 'demo-studio <command>\n\n' +
   '  run <script.yaml> [--live] [--record] [--dry] [--headed] [--out DIR] [--from N] [--to N] [--keep-partial]\n' +
@@ -22,7 +22,7 @@ const HELP = 'demo-studio <command>\n\n' +
   '  snap | peek [--app NAME] | undo | status | stop   aria tree / screenshot / cut last step / finish\n' +
   '        multi-app scripts declare apps: {driver: {url, device: phone, storageState}, …}; steps pick one with on: driver\n' +
   '  install                                 download Chrome for Testing (needed for headless runs > 30 s)\n' +
-  '  voices [lang=vi]                        list Edge neural voices\n' +
+  '  voices [lang=vi] | voices vieneu        list Edge neural voices / local VieNeu voices\n' +
   '  say <text> [--voice NAME] [--provider P] preview a narration line on the speakers\n' +
   '  auth <url> --save auth.json             log in by hand in a real window; saves storageState\n';
 
@@ -101,11 +101,18 @@ async function main() {
       await new Promise((r, j) => spawn(process.execPath, [cli, 'install', 'chromium'], { stdio: 'inherit' }).on('close', c => (c ? j(new Error('install failed')) : r())));
       return;
     }
-    case 'voices': return print((await listVoices(pos[0] ?? 'vi')).map(v => v.name + '  ' + v.gender + '  ' + v.locale).join('\n'));
+    case 'voices': {
+      if (pos[0] === 'vieneu') { // local VieNeu preset voices (starts the worker; first run downloads the model)
+        const { vieneuVoices } = await import('../src/tts.js');
+        print((await vieneuVoices()).join('\n')); stopWorkers(); return;
+      }
+      return print((await listVoices(pos[0] ?? 'vi')).map(v => v.name + '  ' + v.gender + '  ' + v.locale).join('\n'));
+    }
     case 'say': {
       const voice = { ...(flags.provider ? { provider: flags.provider } : {}), ...(flags.voice ? { name: flags.voice } : {}), ...(flags.rate ? { rate: flags.rate } : {}) };
       const clip = await synth(pos.join(' '), voice);
       print(clip);
+      stopWorkers();
       if (!flags['no-play']) await new Promise(r => spawn(process.platform === 'darwin' ? 'afplay' : 'ffplay', process.platform === 'darwin' ? [clip.file] : ['-nodisp', '-autoexit', clip.file], { stdio: 'ignore' }).on('close', r));
       return;
     }

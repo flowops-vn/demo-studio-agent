@@ -12,7 +12,7 @@ import { Narrator } from './narrator.js';
 import { Recorder } from './recorder.js';
 import { finalize } from './finalize.js';
 import { compose, panelSizes } from './stage.js';
-import { DEFAULT_VOICE } from './tts.js';
+import { DEFAULT_VOICE, prewarm, stopWorkers } from './tts.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Branded Chrome (158+) quits headless sessions after ~30 s, so headless runs use a
@@ -86,6 +86,7 @@ export class Session {
     this.tcounter = 0; this.t0 = performance.now();
     this.apps = {}; this.switches = [];
     const c = this.cfg;
+    if (!c.dry) prewarm(c.voice); // e.g. load the local VieNeu model while the browser starts
     this.narrator = new Narrator({ voice: c.voice, live: c.live, dry: c.dry, clock: () => this.clock(), captions: c.captions, onCaption: t => { this.state.caption = t; this.ov('caption', t); } });
   }
   clock = () => (this.rec ? this.rec.time() : performance.now() - this.t0);
@@ -604,6 +605,7 @@ export class Session {
       if (!process.env.DEMO_STUDIO_KEEP_RAW) await Promise.all(Object.values(rec.files).map(f => rm(f, { force: true })));
     }
     await this.browser.close().catch(() => {});
+    stopWorkers();
     if (rec && finalizeVideo) {
       Object.assign(result, await finalize({ raw, outDir: this.outDir, name: this.cfg.name || 'demo', segments: this.narrator.segments, chapters: this.chapters, cuts: this.cuts, music: this.cfg.music, fps: this.cfg.output.fps, frame, size: this.cfg.output }));
       await writeFile(join(this.outDir, 'timeline.json'), JSON.stringify({ narration: this.narrator.segments.map(({ file, ...s }) => s), chapters: this.chapters, cuts: this.cuts, apps: this.staged ? this.switches : undefined }, null, 2));

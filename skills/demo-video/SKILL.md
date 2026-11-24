@@ -183,6 +183,10 @@ only), plus `nth`, `exact`, `within`.
 - `goto` page loads are trimmed from the video when nobody is speaking.
 - New tabs/popups are followed automatically.
 - Edge TTS needs internet; offline fallback `voice: {provider: say, name: Linh}`.
+- Local Vietnamese voice: `voice: {provider: vieneu, name: "Mai Anh", rate: "+5%"}` (VieNeu-TTS v3 Turbo, CPU/ONNX,
+  ~1–3 s per sentence on a laptop, no network after the first run). Needs `uv` (or `DEMO_TTS_VIENEU_PYTHON` = a Python
+  with `pip install vieneu`); first use downloads ~0.6 GB to the Hugging Face cache. Voices: `demo-studio voices vieneu`
+  (e.g. Mai Anh, Trúc Ly, Thùy Dung, Ngọc Huyền, Minh Triết, Hải Đăng). Options: `precision: int8`, `temperature: 0.8`.
   `provider: openai` (any OpenAI-compatible /audio/speech, DEMO_TTS_BASE_URL/DEMO_TTS_API_KEY)
   and `provider: gemini` (DEMO_TTS_GEMINI_KEY) are supported too.
 - Outputs go to `demo-out/<name>-<timestamp>/` under the cwd unless `--out`.
