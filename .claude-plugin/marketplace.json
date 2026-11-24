@@ -1,0 +1,16 @@
+{
+  "name": "demo-studio-agent",
+  "owner": {
+    "name": "demo-studio contributors"
+  },
+  "metadata": {
+    "description": "demo-studio: narrated, annotated browser demos produced by Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "demo-studio",
+      "source": "./",
+      "description": "Live demos and recorded demo videos driven by the agent (skill demo-video + demo-studio CLI)."
+    }
+  ]
+}

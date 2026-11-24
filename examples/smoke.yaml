@@ -1,0 +1,23 @@
+name: smoke
+baseURL: ./fixture/
+voice: { provider: edge, name: vi-VN-HoaiMyNeural, rate: "+5%" }
+steps:
+  - title: { kicker: "Acme · Demo", text: "Tạo đơn vận chuyển trong 30 giây", sub: "Acme TMS" }
+    say: "Xin chào anh chị. Sau đây là bản demo tạo đơn vận chuyển trên Acme TMS."
+  - goto: index.html
+  - chapter: "Tổng quan"
+    say: "Màn hình đầu tiên là danh sách đơn hàng trong ngày, cùng tỷ lệ giao đúng giờ."
+    spotlight: "#orders"
+  - say: "Tỷ lệ đúng giờ tuần này đạt chín mươi bốn phần trăm."
+    zoom: "#kpi"
+  - chapter: "Tạo đơn"
+    say: "Để tạo đơn mới, bấm nút Tạo đơn ở góc phải."
+    click: { role: button, name: "+ Tạo đơn" }
+  - say: "Nhập tên khách hàng, rồi lưu."
+    type: { placeholder: "Tên khách hàng", text: "Hưng Thịnh" }
+    callout: { sel: "#save", title: "Mẹo", text: "Đơn mới sẽ xuất hiện ngay trong danh sách" }
+  - click: "#save"
+  - say: "Đơn mới đã nằm trong danh sách, sẵn sàng điều xe."
+    highlight: "text=DH-1023"
+  - scroll: { to: "#footer-report" }
+    say: "Cuối trang là báo cáo tổng hợp."

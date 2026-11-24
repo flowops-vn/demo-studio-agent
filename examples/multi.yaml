@@ -1,0 +1,18 @@
+name: multi-smoke
+voice: { provider: say, name: Linh }
+layout: { mode: split }
+frame: { background: aurora }
+apps:
+  driver:    { label: "Tài xế", device: phone, url: ./fixture/index.html }
+  dispatcher: { label: "Điều hành", viewport: [1280, 800], url: ./fixture/index.html }
+steps:
+  - on: driver
+    chapter: "Hai màn hình"
+    say: "Bên trái là điện thoại tài xế."
+    circle: { text: "Acme TMS" }
+  - on: dispatcher
+    say: "Bên phải là màn hình điều hành, cùng lúc."
+    click: { role: button, name: "+ Tạo đơn" }
+  - on: driver
+    say: "Quay lại điện thoại."
+    underline: { text: "Đơn hàng hôm nay" }

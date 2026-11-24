@@ -1,0 +1,125 @@
+#!/usr/bin/env node
+// demo-studio: narrated, annotated browser demos driven by an AI agent.
+import { readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { spawn } from 'node:child_process';
+import { chromium } from 'playwright-core';
+import YAML from 'yaml';
+import { loadScript, runScript } from '../src/runner.js';
+import { serve } from '../src/server.js';
+import { listVoices, synth } from '../src/tts.js';
+
+const HELP = 'demo-studio <command>\n\n' +
+  '  run <script.yaml> [--live] [--record] [--dry] [--headed] [--out DIR] [--from N] [--to N] [--keep-partial]\n' +
+  '        record (default): headless, writes mp4 + srt + contact sheet\n' +
+  '        --live: headed browser + narration on speakers (add --record to also save a video)\n' +
+  '        --dry: fast headless pass, no TTS/recording, checks every step resolves\n' +
+  '  serve [--config script.yaml] [--url URL] [--live] [--record] [--dry] [--port 7788] [--cdp 9333] [--out DIR] [--name N]\n' +
+  '        long-running session for step-by-step agent control (idle time is cut from the video)\n' +
+  '  do <yaml|json>  |  do -f steps.yaml     send steps to the running session\n' +
+  '  look [--app NAME|all]                   numbered visible controls + text (targets: e7, t12)\n' +
+  '  snap | peek [--app NAME] | undo | status | stop   aria tree / screenshot / cut last step / finish\n' +
+  '        multi-app scripts declare apps: {driver: {url, device: phone, storageState}, …}; steps pick one with on: driver\n' +
+  '  install                                 download Chrome for Testing (needed for headless runs > 30 s)\n' +
+  '  voices [lang=vi]                        list Edge neural voices\n' +
+  '  say <text> [--voice NAME] [--provider P] preview a narration line on the speakers\n' +
+  '  auth <url> --save auth.json             log in by hand in a real window; saves storageState\n';
+
+const argv = process.argv.slice(2);
+const BOOL = new Set(['json', 'no-observe', 'live', 'dry', 'record', 'headed', 'keep-partial', 'no-play']);
+const cmd = argv.shift();
+const flags = {}, pos = [];
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i];
+  if (a.startsWith('--')) { const k = a.slice(2); const n = argv[i + 1]; if (BOOL.has(k) || n === undefined || n.startsWith('--')) flags[k] = true; else { flags[k] = n; i++; } }
+  else if (a === '-f') { flags.file = argv[++i]; }
+  else pos.push(a);
+}
+const port = Number(flags.port || process.env.DEMO_STUDIO_PORT || 7788);
+const api = async (path, init) => {
+  let res;
+  try { res = await fetch('http://127.0.0.1:' + port + path, init); }
+  catch { throw new Error('no demo-studio session on port ' + port + ' (start one with: demo-studio serve ...)'); }
+  return res.json();
+};
+const print = o => process.stdout.write((typeof o === 'string' ? o : JSON.stringify(o, null, 2)) + '\n');
+const modeOf = () => (flags.dry ? 'dry' : flags.live ? 'live' : 'record');
+const appQ = () => (flags.app ? '?app=' + encodeURIComponent(flags.app) : '');
+const num = v => (v === undefined ? undefined : Number(v));
+
+async function main() {
+  switch (cmd) {
+    case 'run': {
+      if (!pos[0]) throw new Error('usage: demo-studio run <script.yaml>');
+      const doc = await loadScript(pos[0]);
+      const o = { mode: modeOf(), from: num(flags.from), to: num(flags.to), keepPartial: !!flags['keep-partial'] };
+      if (flags.record) o.record = true;
+      if (flags.headed) o.headed = true;
+      if (flags.out) o.outDir = flags.out;
+      if (flags.voice) o.voice = { ...(doc.voice || {}), name: flags.voice };
+      const r = await runScript(doc, o);
+      print(r); process.exit(r.failed ? 1 : 0);
+    }
+    case 'serve': {
+      const doc = flags.config ? await loadScript(flags.config) : {};
+      delete doc.steps;
+      const cfg = { ...doc, mode: modeOf() };
+      if (flags.record) cfg.record = true;
+      if (flags.headed) cfg.headed = true;
+      if (flags.out) cfg.outDir = flags.out;
+      if (flags.name) cfg.name = flags.name;
+      if (flags.cdp) cfg.cdpPort = Number(flags.cdp);
+      if (flags.voice) cfg.voice = { ...(cfg.voice || {}), name: flags.voice };
+      const { session } = await serve(cfg, port);
+      if (flags.url) await session.step({ goto: flags.url });
+      session.idle();
+      const names = Object.keys(session.apps);
+      print({ ready: true, port, outDir: session.outDir, mode: session.cfg.mode, record: !!session.cfg.record, cdpPort: cfg.cdpPort ?? null, ...(names.length > 1 ? { apps: names, active: session.cur.name } : {}) });
+      // ids ready for the first `do`
+      for (const n of names) if (flags.url || session.apps[n].url) print((await session.observe(n)).text + '\n');
+      return; // keep running
+    }
+    case 'do': {
+      const txt = flags.file ? await readFile(flags.file, 'utf8') : pos.join(' ');
+      const r = await api('/steps' + (flags['no-observe'] ? '?observe=0' : ''), { method: 'POST', body: txt });
+      if (flags.json) print(r);
+      else {
+        const { observe, ...meta } = r;
+        print((r.ok ? 'ok ' + JSON.stringify(r.done) + ' ' + r.ms + 'ms' : 'FAIL at step ' + r.failedStep + ': ' + r.error + '\n' + r.screenshot) + (observe ? '\n' + observe : ''));
+      }
+      process.exit(r.ok ? 0 : 1);
+    }
+    case 'look': { const r = await api('/observe' + appQ()); print(r.observe); return; }
+    case 'snap': { const r = await api('/snapshot' + appQ()); print('url: ' + r.url + '\ntitle: ' + r.title + '\n' + r.tree); return; }
+    case 'peek': return print(await api('/screenshot' + appQ()));
+    case 'undo': return print(await api('/undo', { method: 'POST' }));
+    case 'status': return print(await api('/status'));
+    case 'stop': return print(await api('/stop', { method: 'POST' }));
+    case 'install': {
+      const cli = new URL('../node_modules/playwright-core/cli.js', import.meta.url).pathname;
+      await new Promise((r, j) => spawn(process.execPath, [cli, 'install', 'chromium'], { stdio: 'inherit' }).on('close', c => (c ? j(new Error('install failed')) : r())));
+      return;
+    }
+    case 'voices': return print((await listVoices(pos[0] ?? 'vi')).map(v => v.name + '  ' + v.gender + '  ' + v.locale).join('\n'));
+    case 'say': {
+      const voice = { ...(flags.provider ? { provider: flags.provider } : {}), ...(flags.voice ? { name: flags.voice } : {}), ...(flags.rate ? { rate: flags.rate } : {}) };
+      const clip = await synth(pos.join(' '), voice);
+      print(clip);
+      if (!flags['no-play']) await new Promise(r => spawn(process.platform === 'darwin' ? 'afplay' : 'ffplay', process.platform === 'darwin' ? [clip.file] : ['-nodisp', '-autoexit', clip.file], { stdio: 'ignore' }).on('close', r));
+      return;
+    }
+    case 'auth': {
+      const save = resolve(flags.save || 'auth.json');
+      const browser = await chromium.launch({ channel: 'chrome', headless: false, ignoreDefaultArgs: ['--enable-automation'] });
+      const ctx = await browser.newContext({ viewport: null, storageState: existsSync(save) ? save : undefined });
+      const page = await ctx.newPage(); await page.goto(pos[0]);
+      console.error('Log in in the opened window, then close the tab to save ' + save);
+      await page.waitForEvent('close', { timeout: 0 });
+      await ctx.storageState({ path: save }); await browser.close();
+      return print({ saved: save });
+    }
+    default: print(HELP); process.exit(cmd ? 1 : 0);
+  }
+}
+main().catch(e => { console.error('error: ' + e.message); process.exit(1); });

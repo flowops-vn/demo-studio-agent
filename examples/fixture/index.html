@@ -1,0 +1,13 @@
+<!doctype html><html lang="vi"><head><meta charset="utf-8"><title>Demo TMS</title>
+<style>body{margin:0;font-family:system-ui;background:#f6f7fb;color:#1b1f2a}header{background:#fff;border-bottom:1px solid #e5e7ef;padding:14px 28px;display:flex;justify-content:space-between;align-items:center}
+main{padding:28px;display:grid;grid-template-columns:2fr 1fr;gap:24px}.card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 1px 3px #0001}
+table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #eee;text-align:left}button{background:#4f46e5;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:15px;cursor:pointer}
+input{padding:10px;border:1px solid #ccd;border-radius:8px;width:100%;font-size:15px;box-sizing:border-box}.kpi{font-size:34px;font-weight:700}#modal{display:none;position:fixed;inset:0;background:#0005;align-items:center;justify-content:center}#modal.on{display:flex}</style></head>
+<body><header><b>Acme TMS</b><button id="new">+ Tạo đơn</button></header>
+<main><div class="card"><h3>Đơn hàng hôm nay</h3><table id="orders"><tr><th>Mã</th><th>Khách</th><th>Tuyến</th><th>Trạng thái</th></tr>
+<tr><td>DH-1021</td><td>Minh An Foods</td><td>HCM → Bình Dương</td><td>Đang chạy</td></tr><tr><td>DH-1022</td><td>Sao Việt</td><td>HCM → Long An</td><td>Chờ xe</td></tr></table></div>
+<div class="card"><h3>Hiệu suất</h3><div class="kpi" id="kpi">94%</div><p>Đúng giờ tuần này</p></div></main>
+<div style="height:900px"></div><div class="card" id="footer-report" style="margin:28px">Báo cáo cuối trang</div>
+<div id="modal"><div class="card" role="dialog" aria-label="Tạo đơn mới" style="width:420px;max-height:340px;overflow:auto"><h3>Tạo đơn mới</h3><label>Khách hàng <input id="cust" placeholder="Tên khách hàng"></label><br><br><button id="save">Lưu đơn</button><p>Điều khoản vận chuyển số 1</p><p>Điều khoản vận chuyển số 2</p><p>Điều khoản vận chuyển số 3</p><p>Điều khoản vận chuyển số 4</p><p>Điều khoản vận chuyển số 5</p><p>Điều khoản vận chuyển số 6</p><p>Điều khoản vận chuyển số 7</p><p>Điều khoản vận chuyển số 8</p><p>Điều khoản vận chuyển số 9</p><p>Điều khoản vận chuyển số 10</p><p>Điều khoản vận chuyển số 11</p><p>Điều khoản vận chuyển số 12</p><p>Điều khoản vận chuyển số 13</p><p>Điều khoản vận chuyển số 14</p><p id="terms-end">Cuối điều khoản</p></div></div>
+<script>document.getElementById('new').onclick=()=>document.getElementById('modal').classList.add('on');
+document.getElementById('save').onclick=()=>{const t=document.getElementById('orders');const r=t.insertRow();r.innerHTML='<td>DH-1023</td><td>'+document.getElementById('cust').value+'</td><td>HCM → Đồng Nai</td><td>Mới tạo</td>';document.getElementById('modal').classList.remove('on')};</script></body></html>

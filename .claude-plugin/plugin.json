@@ -1,0 +1,16 @@
+{
+  "name": "demo-studio",
+  "version": "0.2.0",
+  "description": "Agent-driven product demos: drives a real browser (one or several apps at once), presenter annotations, TTS voice-over; live presenting or a recorded 1080p mp4 with captions and chapters.",
+  "author": {
+    "name": "demo-studio contributors"
+  },
+  "keywords": [
+    "demo",
+    "video",
+    "playwright",
+    "presentation",
+    "tts",
+    "screen-recording"
+  ]
+}

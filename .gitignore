@@ -1,0 +1,8 @@
+node_modules/
+demo-out/
+*.mp4
+.DS_Store
+auth.json
+auth-*.json
+# Customer demo scripts and saved logins stay local (session tokens, real data)
+demos/

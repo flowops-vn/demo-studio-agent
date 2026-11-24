@@ -1,0 +1,35 @@
+name: showcase
+baseURL: ./fixture/
+voice: { provider: edge, name: vi-VN-HoaiMyNeural, rate: "+5%" }
+autoZoom: true
+frame: { background: aurora, padding: 72, radius: 20 }
+theme: { cursor: halo }
+steps:
+  - title: { kicker: "Acme · Demo", text: "Bộ công cụ trình bày mới", sub: "Vẽ tay, auto-zoom, slide, bảng trắng" }
+    say: "Đây là bản demo các tính năng trình bày mới."
+  - slide:
+      kicker: "Hôm nay"
+      title: "Ba điểm chính"
+      bullets: ["Đơn hàng theo thời gian thực", "Tạo đơn trong ba mươi giây", "Báo cáo đúng giờ"]
+    say: "Hôm nay mình đi qua ba điểm chính: đơn hàng theo thời gian thực, tạo đơn nhanh, và báo cáo đúng giờ."
+  - goto: index.html
+  - chapter: "Tổng quan"
+    say: "Đây là danh sách đơn hàng trong ngày."
+    circle: "text=DH-1021"
+  - say: "Tỷ lệ giao đúng giờ được tính tự động."
+    arrow: { sel: "#kpi", text: "Cập nhật mỗi giờ" }
+    underline: "text=Đúng giờ tuần này"
+  - chapter: "Tạo đơn"
+    say: "Bấm Tạo đơn, màn hình tự phóng to theo thao tác."
+    click: { role: button, name: "+ Tạo đơn" }
+  - say: "Nhập tên khách hàng rồi lưu."
+    type: { placeholder: "Tên khách hàng", text: "Hưng Thịnh" }
+    box: "#save"
+  - click: "#save"
+  - say: "Đơn mới đã xuất hiện trong danh sách."
+    highlight: "text=DH-1023"
+  - whiteboard:
+      title: "Luồng xử lý đơn"
+      html: '<svg width="900" height="160" viewBox="0 0 900 160" font-family="system-ui" font-size="22"><g fill="#fff" stroke="#1b1f33" stroke-width="2.5"><rect x="10" y="40" width="220" height="80" rx="14"/><rect x="340" y="40" width="220" height="80" rx="14"/><rect x="670" y="40" width="220" height="80" rx="14"/></g><g fill="#1b1f33" text-anchor="middle"><text x="120" y="88">Nhận đơn</text><text x="450" y="88">Điều xe</text><text x="780" y="88">Giao hàng</text></g><g stroke="#1b1f33" stroke-width="2.5" fill="none"><path d="M235 80 H335"/><path d="M565 80 H665"/></g></svg>'
+    say: "Tóm lại, mỗi đơn đi qua ba bước: nhận đơn, điều xe, và giao hàng."
+    draw: { points: [[640, 640], [700, 600], [760, 640], [700, 680], [640, 640]], ms: 900 }
