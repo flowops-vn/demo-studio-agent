@@ -15,11 +15,13 @@ recordings Chrome for Testing (`demo-studio install`, once). Live demos use the 
 
 | Need | Command |
 |---|---|
+| Live demo / present to a customer | `demo-studio serve --live --url <url>` → headed Chrome, voice on speakers; then `do` one beat at a time, improvised from the screen (see below). **No YAML, no dry run.** |
+| Live and keep a copy | same, plus `--record` |
 | Shareable video (default) | `demo-studio run demo.yaml` → headless, 1920x1080 mp4 + srt + chapters |
-| Present live to a customer | `demo-studio run demo.yaml --live` → headed Chrome, voice on speakers |
-| Live and keep a copy | `demo-studio run demo.yaml --live --record` |
-| Check a script quickly | `demo-studio run demo.yaml --dry` (no TTS, no video, ~5 s) |
+| Check a video script quickly | `demo-studio run demo.yaml --dry` (no TTS, no video, ~5 s) |
 
+Scripts (demo.yaml, `--dry`, `run`) are for **recorded videos** only. `run demo.yaml --live` replays a
+rehearsed script on screen; use it only when the user hands you a script and asks for exactly that.
 Headless is the right default for recordings: fixed viewport, no window chrome, runs in the
 background without touching the user's screen. Use headed only for live presenting.
 
@@ -49,11 +51,24 @@ project theme, `frame: false` records full-bleed.
 
 ## Live demo (improvise — like browser-use)
 
-For "live demo", open the visible browser right away and drive it beat by beat; do not explore
-headless or write YAML first.
+A live demo is a presenter at the keyboard, not a script being played. You already have the overview
+(what the product does, the story the user asked for, from the conversation and the codebase); the
+screen tells you the rest. So, for "live demo":
+
+- **Do not** write a demo.yaml / live.yaml / steps file, do not `run --dry`, do not explore in a headless
+  session first. Saving a file and then running it is the recording workflow, not a live demo.
+- **Do** open the visible browser at once with `serve --live`, read the observation, and send one `do`
+  per beat: say what is on screen, act, look at the result, decide the next beat from what actually
+  appeared (real names, real numbers, the AI's real answer). If the UI differs from what you expected,
+  adapt on the spot (narrate it, take the other path) instead of stopping to rewrite anything.
+- Narration is written as you go, short and spoken (see Narration below), about what the audience sees now.
+- Everything comes from flags: `--storage auth.json` (logged-in state), `--provider vieneu|edge|say`,
+  `--voice NAME`, `--rate +8%`. The project theme is picked up from the cwd. `--config file.yaml` is only for
+  settings flags cannot express (several `apps:`, permissions); it holds settings, never steps.
+- If there is no login state, log in on screen as part of the demo (type into the form; the audience sees it).
 
 ```
-demo-studio serve --live --config live.yaml --url <url> --port 7791   # await with .timeout(15000); prints the first observation
+demo-studio serve --live --url <url> [--storage auth.json] --port 7791   # await with .timeout(15000); prints the first observation
 demo-studio do --port 7791 '{say: "…", click: e4}'                    # returns as soon as the actions finish + the new observation
 demo-studio look --port 7791                                           # observation only
 demo-studio peek --port 7791                                           # screenshot path (Read it) when layout matters
@@ -140,7 +155,7 @@ steps:
 thinking time never reaches the video; a step that fails is **cut automatically**;
 `demo-studio undo` cuts the last successful step. `demo-studio stop` finalizes and writes
 `script.yaml` — a replayable script of what was done (re-render later with `run`).
-Don't use serve for live presenting: the audience would watch the agent think.
+(For live presenting use `serve --live`, see "Live demo": the voice keeps talking while you pick the next beat.)
 
 ## demo.yaml
 
