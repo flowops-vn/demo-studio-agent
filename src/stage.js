@@ -10,7 +10,7 @@ import { run } from './proc.js';
 
 const even = v => Math.max(2, Math.round(v / 2) * 2);
 export const BACKGROUNDS = { aurora: 'linear-gradient(135deg,#1e1b4b,#4f46e5 55%,#0ea5e9)', midnight: 'linear-gradient(135deg,#0b1020,#1f2a55)', sunset: 'linear-gradient(135deg,#f97316,#db2777 55%,#7c3aed)', mist: 'linear-gradient(135deg,#e2e8f0,#cbd5e1)', ocean: 'linear-gradient(135deg,#0f766e,#1d4ed8)' };
-function cssBackground(spec = 'midnight') {
+export function cssBackground(spec = 'midnight') {
   if (BACKGROUNDS[spec]) return BACKGROUNDS[spec];
   if (spec.startsWith('linear:')) return 'linear-gradient(135deg,' + spec.slice(7) + ')';
   if (/^#|^rgb|^[a-z]+$/i.test(spec)) return spec;
@@ -78,7 +78,7 @@ function activeSpans(switches, names, totalMs) {
 const expr = spans => spans.map(([a, b]) => 'between(t,' + a.toFixed(3) + ',' + b.toFixed(3) + ')').join('+') || '0';
 const invert = (spans, total) => { const out = []; let p = 0; for (const [a, b] of spans) { if (a > p) out.push([p, a]); p = b; } if (p < total) out.push([p, total]); return out; };
 
-export async function compose({ browser, apps, files, switches, totalMs, out, size, fps = 30, layout = {}, background, dir }) {
+export async function compose({ browser, apps, files, switches, totalMs, out, size, fps = 30, layout = {}, background, font, dir }) {
   const W = size.width, H = size.height, names = apps.map(a => a.name), total = totalMs / 1000;
   const spans = activeSpans(switches, names, totalMs);
   const mode = layout.mode || 'split';
@@ -105,7 +105,7 @@ export async function compose({ browser, apps, files, switches, totalMs, out, si
     const labelTop = Math.min(...ps.map(q => q.y - q.bezel)) - (ps[0]?.labelH || 0);
     const panels = ps.map(p => {
       const box = '<div style="position:absolute;left:' + (p.x - p.bezel) + 'px;top:' + (p.y - p.bezel) + 'px;width:' + (p.w + 2 * p.bezel) + 'px;height:' + (p.h + 2 * p.bezel) + 'px;border-radius:' + (p.radius + p.bezel) + 'px;background:#0a0a0f;box-shadow:0 28px 70px rgba(0,0,0,.45),0 0 0 1.5px rgba(255,255,255,.14)"></div>';
-      const label = p.labelH ? '<div style="position:absolute;left:' + (p.x - 40) + 'px;width:' + (p.w + 80) + 'px;top:' + labelTop + 'px;height:' + (p.labelH - 10) + 'px;display:flex;align-items:center;justify-content:center;color:#fff;font:600 26px -apple-system,Segoe UI,Inter,sans-serif;letter-spacing:.2px;text-shadow:0 2px 10px rgba(0,0,0,.35)">' + String(p.label).replace(/</g, '&lt;') + '</div>' : '';
+      const label = p.labelH ? '<div style="position:absolute;left:' + (p.x - 40) + 'px;width:' + (p.w + 80) + 'px;top:' + labelTop + 'px;height:' + (p.labelH - 10) + 'px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:600;font-size:26px;font-family:' + String(font || '-apple-system,Segoe UI,Inter,sans-serif').replace(/"/g, "'") + ';letter-spacing:.2px;text-shadow:0 2px 10px rgba(0,0,0,.35)">' + String(p.label).replace(/</g, '&lt;') + '</div>' : '';
       return box + label;
     }).join('');
     await renderStage(browser, '<html><body style="margin:0;width:' + W + 'px;height:' + H + 'px;background:' + bg + ';position:relative;overflow:hidden">' + panels + '</body></html>', W, H, bgFile);

@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import YAML from 'yaml';
 import { Session } from './session.js';
+import { applyProjectTheme } from './theme.js';
 
 export async function loadScript(file) {
   const doc = YAML.parse(await readFile(file, 'utf8'));
@@ -19,6 +20,8 @@ export async function loadScript(file) {
   }
   if (doc.frame?.background && /[./]/.test(doc.frame.background) && !doc.frame.background.startsWith('#')) doc.frame.background = resolve(base, doc.frame.background);
   if (doc.music?.file) doc.music.file = resolve(base, doc.music.file);
+  // The look comes from the codebase being demoed (.demo-studio/theme.yaml next to the script or above the cwd).
+  await applyProjectTheme(doc, base, process.cwd());
   return doc;
 }
 
@@ -34,6 +37,7 @@ export async function runScript(doc, overrides = {}, log = console.error) {
     log('tts: synthesizing ' + narrationOf(steps.slice(from, to)).length + ' narration clips (' + session.cfg.voice.provider + ' ' + session.cfg.voice.name + ')');
     await session.narrator.prepare(narrationOf(steps.slice(from, to)));
   }
+  log(session.cfg.projectTheme ? 'theme: ' + session.cfg.projectTheme : 'theme: none (no .demo-studio/theme.yaml in this codebase; create one with: demo-studio theme init --url <app url>)');
   await session.start();
   log('session: mode=' + session.cfg.mode + ' headed=' + session.cfg.headed + ' record=' + !!session.cfg.record + ' out=' + session.outDir);
   let failed = null;

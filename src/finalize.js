@@ -64,7 +64,7 @@ export async function finalize({ raw, outDir, name = 'demo', segments = [], chap
   let fl = null;
   if (frame) {
     const W = size?.width || 1920, H = size?.height || 1080;
-    fl = await frameLayers(typeof frame === 'object' ? frame : {}, W, H, outDir);
+    fl = await frameLayers(typeof frame === 'object' ? frame : typeof frame === 'string' ? { background: frame } : {}, W, H, outDir);
     const base = args.filter(a => a === '-i').length; // index of next input
     const dur = (editedMs / 1000 + 1).toFixed(3);
     args.push('-loop', '1', '-t', dur, '-i', fl.bg, '-loop', '1', '-t', dur, '-i', fl.sh, '-loop', '1', '-t', dur, '-i', fl.mask);
