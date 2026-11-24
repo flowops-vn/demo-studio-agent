@@ -191,6 +191,34 @@ Targets: an observation id (`e7`, `t12`, `{node: e7}`) in serve sessions, a Play
 object: `{role, name}`, `{label}`, `{placeholder}`, `{text}`, `{testId}`, `{sel}`, `{ref: e12}` (serve
 only), plus `nth`, `exact`, `within`.
 
+## Timing: voice, actions and annotations stay together
+
+Each step's actions are timed against its sentence. The clip's pauses come from the audio, and words
+are placed by syllables of what the voice actually reads. An action whose target is mentioned in
+the sentence lands on those words: the click on "Tạo đơn" lands as the voice says "Tạo đơn", and the
+circle around "94%" appears on "chín mươi tư phần trăm". To make this work:
+
+- Name the thing you act on in the sentence, using its on-screen label. "Anh chị bấm Tạo đơn" anchors
+  `click: e7` automatically, because the label is read from the element. Otherwise anchor it with
+  `at: "cụm từ"` on the target (`circle: {text: "94%", at: "đúng giờ"}`), on the step for its first
+  action, or as ms (`at: 2500`) or `at: end`.
+- Unanchored actions: the first follows the voice by `lead` (450 ms), and later ones keep `beatMs`
+  (500) apart while the sentence runs. An annotation stays at least `minAnnotMs` (1400) before the next
+  sentence clears it, and there is a `voice.gap` (300 ms) breath between sentences.
+- One sentence per beat; do not describe three actions in one sentence and then act silently.
+- After a recording, `sync` in the result (full log in `sync.json`) lists actions that finished long
+  after their sentence, long-sentence annotations that were not anchored, and silent actions fired back
+  to back. Fix those steps and re-record.
+- Slide bullets also appear as the voice reaches each bullet's words.
+
+## Slides: one outline, up front
+
+An agenda/outline slide goes **once, at the start** (and optionally a summary at the end). Do not
+return to the outline or put slides between app actions: switching between slide and app is jarring.
+Chapters carry the structure: the chapter pill shows "2/4" automatically. Use a whiteboard mid-video
+only to explain a concept the app cannot show. `lint` and `run --dry` flag repeated outlines and
+mid-demo slides.
+
 ## Narration (spoken Vietnamese)
 
 Read ${CLAUDE_PLUGIN_ROOT}/skills/demo-video/NARRATION.md before writing a script: structure, forms of

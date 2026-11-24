@@ -76,6 +76,11 @@ percentages, dates, times, phone numbers, plates, codes, acronyms, domains, plus
 reviews the narration (sentence length, written-style wording, mixed forms of address, unknown acronyms).
 `voices:` + `as:` give role-play lines their own voice. Writing guide: `skills/demo-video/NARRATION.md`.
 
+Actions are timed against the words (`src/cues.js`): the clip's pauses come from ffmpeg silencedetect, words
+are placed by syllables of the spoken form, and an action whose label the sentence mentions (or `at: "phrase"`)
+lands on it; slide bullets reveal on their words. After a recording, `sync.json` (and `sync` in the result)
+lists actions that drifted from their sentence. `lint` flags repeated outline slides and slides between app actions.
+
 ## Output folder
 
 `<name>.mp4`, `<name>.srt`, `chapters.txt`, `contact.jpg`, `timeline.json` (narration/chapter

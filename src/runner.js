@@ -35,14 +35,25 @@ export function narrationOf(steps, session) {
   });
 }
 // Speech review: long sentences, stiff written phrasing, mixed forms of address, unknown acronyms.
+const APP_KEYS = new Set(['goto', 'click', 'dblclick', 'type', 'fill', 'select', 'check', 'uncheck', 'upload', 'press', 'scroll', 'hover']);
 export function lintScript(doc) {
-  const items = (doc.steps || []).map((s, index) => ({ index, text: typeof s === 'string' ? s : s?.say })).filter(x => x.text);
-  return lintNarration(items, { pronounce: { ...(doc.pronounce || {}), ...(doc.voice?.pronounce || {}) } });
+  const steps = doc.steps || [];
+  const items = steps.map((s, index) => ({ index, text: typeof s === 'string' ? s : s?.say })).filter(x => x.text);
+  const r = lintNarration(items, { pronounce: { ...(doc.pronounce || {}), ...(doc.voice?.pronounce || {}) } });
+  // Structure: an agenda/outline slide once, up front; chapters carry the viewer through the rest.
+  const obj = steps.map((s, i) => [s && typeof s === 'object' ? s : {}, i]);
+  const slideOf = s => { const v = s.slide ?? s.whiteboard; return v && v !== 'off' ? v : null; };
+  const outlines = obj.filter(([s]) => slideOf(s)?.bullets?.length >= 2);
+  if (outlines.length > 1) r.warnings.push('slide dàn ý xuất hiện ' + outlines.length + ' lần (' + outlines.map(([, i]) => '#' + i).join(' ') + '): chỉ một lần ở đầu video; các phần sau dùng chapter (badge hiện "2/4")');
+  const app = obj.filter(([s]) => Object.keys(s).some(k => APP_KEYS.has(k))).map(([, i]) => i);
+  if (app.length) for (const [s, i] of obj) if (slideOf(s) && i > app[0] && i < app[app.length - 1]) r.warnings.push('#' + i + ' slide chen giữa lúc đang thao tác: người xem phải đổi ngữ cảnh; dùng chapter, callout hoặc caption. Slide để ở đầu (dàn ý) và cuối (tóm tắt)');
+  return r;
 }
 
 export async function runScript(doc, overrides = {}, log = console.error) {
   const { steps = [], ...cfg } = doc;
   const session = new Session({ ...cfg, ...overrides });
+  session.cfg.chapterTotal = steps.filter(s => s && typeof s === 'object' && s.chapter).length;
   if (session.cfg.dry) {
     session.cfg.fastDry = true; // `run --dry` only checks that steps resolve
     const l = lintScript(doc);

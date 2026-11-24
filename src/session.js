@@ -13,6 +13,7 @@ import { Recorder } from './recorder.js';
 import { finalize } from './finalize.js';
 import { compose, panelSizes } from './stage.js';
 import { DEFAULT_VOICE, prewarm, stopWorkers } from './tts.js';
+import { findPhrase, timeAt } from './cues.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Branded Chrome (158+) quits headless sessions after ~30 s, so headless runs use a
@@ -28,7 +29,12 @@ export function findTestingChrome() {
 // Drop value keys (e.g. the text to type) so they are not mistaken for target keys.
 const omit = (v, keys) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([k]) => !keys.includes(k))) : v);
 const TARGET_KEYS = ['sel', 'css', 'role', 'name', 'text', 'label', 'placeholder', 'testId', 'alt', 'title', 'nth', 'exact', 'within', 'ref', 'target'];
-const MODIFIERS = new Set(['say', 'wait_say', 'lead', 'hold', 'id', 'note', 'keep', 'async', 'on', 'as']);
+const MODIFIERS = new Set(['say', 'wait_say', 'lead', 'hold', 'id', 'note', 'keep', 'async', 'on', 'as', 'at']);
+// How long before the word an action starts, so it lands on it: the cursor needs to travel before a click.
+const CUE_LEAD = { click: 800, dblclick: 800, hover: 700, check: 800, uncheck: 800, type: 800, fill: 800, select: 800, zoom: 450, spotlight: 250, highlight: 250, callout: 300, circle: 250, box: 250, underline: 250, arrow: 350, scroll: 400, press: 150 };
+// Actions that show something and so can be tied to the words that mention it.
+const CUEABLE = new Set(Object.keys(CUE_LEAD));
+const ANNOT = new Set(['spotlight', 'highlight', 'callout', 'circle', 'box', 'underline', 'arrow', 'zoom', 'draw']);
 // Device presets for apps: phones get a touch-style dot cursor and mobile emulation.
 export const DEVICES = {
   phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 },
@@ -87,7 +93,7 @@ export class Session {
     this.log = []; this.after = []; this.cuts = []; this.chapters = []; this.chapterNo = 0;
     this.state = { caption: null, chapter: null };
     this.tcounter = 0; this.t0 = performance.now();
-    this.apps = {}; this.switches = [];
+    this.apps = {}; this.switches = []; this.syncLog = [];
     const c = this.cfg;
     if (!c.dry) prewarm(c.voice); // e.g. load the local VieNeu model while the browser starts
     this.narrator = new Narrator({ voice: c.voice, live: c.live, dry: c.dry, clock: () => this.clock(), captions: c.captions, onCaption: t => { this.state.caption = t; this.ov('caption', t); } });
@@ -399,28 +405,45 @@ export class Session {
     if (this.rec && this.rec.paused && !this.recOff) { this.rec.resume(); if (this.staged && !this.nudged) { this.nudged = true; await this.nudgeAll(); } }
     const t0 = this.clock();
     if (this.autoZoomed && !actions.some(k => POINTER.has(k) || k === 'zoom')) await this.unzoom();
-    if (this.cfg.autoClear && st.say && !st.keep) await this.ov('clear');
-    let speech = null;
+    if (this.cfg.autoClear && st.say && !st.keep) {
+      // Give the last annotation time to be seen before the next sentence wipes it.
+      const shown = performance.now() - (this.lastAnnot || 0), min = this.cfg.minAnnotMs ?? 1400;
+      if (!this.cfg.dry && shown < min) await sleep(min - shown);
+      await this.ov('clear');
+    }
+    let speech = null, voiced = null;
     if (st.say) {
       speech = this.narrator.say(st.say, st.as ? { voice, label: voice.label ?? st.as } : {});
-      // Act shortly after the voice starts, but never wait on a slow TTS longer than leadMax.
       if (actions.length && !this.cfg.dry) {
-        if (this.cfg.live) await Promise.race([speech.started.then(() => sleep(st.lead ?? 450)), sleep(this.cfg.leadMax ?? 1600)]);
-        else {
-          // Recording: hold the tape while the clip is synthesized so TTS latency never shows up in the video.
-          const holding = this.rec && !this.rec.paused; if (holding) this.rec.pause();
-          await speech.started; if (holding) this.rec.resume();
-          await sleep(st.lead ?? 450);
-        }
+        // Live: never wait on a slow TTS longer than leadMax. Recording: hold the tape while the clip is
+        // synthesized, so TTS latency never shows up in the video.
+        if (this.cfg.live) voiced = await Promise.race([speech.started, sleep(this.cfg.leadMax ?? 1600).then(() => null)]);
+        else { const holding = this.rec && !this.rec.paused; if (holding) this.rec.pause(); voiced = await speech.started; if (holding) this.rec.resume(); }
       }
     }
+    const cues = voiced && this.cfg.sync !== false ? await this.planCues(st, actions, voiced) : {};
+    this.voicedNow = voiced;
+    const vStart = voiced ? this.clock() - (performance.now() - voiced.wall) : null;
     const logged = {};
     // Mark the mutation count before this beat acts; a later {wait: {change}} compares against it.
     if (actions.some(k => k !== 'wait')) this.mutMark = await this.page.evaluate(() => window.__dsMut?.n ?? 0).catch(() => null);
     if (st.on) logged.on = st.on;
     if (st.as) logged.as = st.as;
     if (st.say) logged.say = st.say;
-    for (const k of actions) logged[k] = await this.action(k, st[k], st, speech);
+    let prevEnd = null;
+    for (const [i, k] of actions.entries()) {
+      if (voiced && !this.cfg.dry) {
+        // Anchored: start so the action lands on its words. Otherwise the first action follows the voice
+        // by `lead`, and later ones keep a short beat apart while the sentence is still running.
+        const due = cues[i] != null ? voiced.wall + cues[i] - (CUE_LEAD[k] ?? 0) : i === 0 ? voiced.wall + (st.lead ?? 450) : prevEnd != null && this.narrator.speaking ? prevEnd + (this.cfg.beatMs ?? 500) : 0;
+        const w = due - performance.now(); if (w > 0) await sleep(w);
+      }
+      const at = this.clock();
+      logged[k] = await this.action(k, st[k], st, speech);
+      prevEnd = performance.now();
+      if (ANNOT.has(k)) this.lastAnnot = prevEnd;
+      this.syncLog.push({ step: this.log.length, key: k, at, end: this.clock(), anchored: cues[i] != null, phrase: cues.phrases?.[i], voice: voiced ? { start: Math.round(vStart), end: Math.round(vStart + voiced.ms) } : null });
+    }
     const hooks = this.after.splice(0);
     const finish = async () => { if (speech) await speech.catch(() => {}); if (st.hold) await sleep(this.cfg.dry ? 0 : st.hold); for (const fn of hooks) await fn(); };
     // asyncSay: return once the actions are done; speech (and slide teardown) continue while the agent thinks.
@@ -548,7 +571,10 @@ export class Session {
         const n = o.bullets?.length || 0;
         const span = st.say ? await this.narrator.durationOf(st.say, this.voiceFor(st)) : n * 1100;
         // Bullets reveal across the narration while later keys of this step (e.g. draw) run.
-        const reveals = (async () => { for (let i = 0; i < n; i++) { await sleep(c.dry ? 0 : (i === 0 ? 350 : span * 0.82 / n)); await this.ov('reveal', i); } })();
+        // Each bullet appears when the voice reaches it; bullets the sentence does not mention are spread evenly.
+        const vo = speech && this.voicedNow, opts = { lang: vo?.voice?.lang, pronounce: vo?.voice?.pronounce };
+        const when = (o.bullets || []).map((b, i) => { const f = vo && findPhrase(vo.text, [b]); return f ? vo.wall + timeAt(vo.text, f.index, vo, opts) - 200 : null; });
+        const reveals = (async () => { for (let i = 0; i < n; i++) { if (c.dry) { await this.ov('reveal', i); continue; } if (when[i] != null) { const w = when[i] - performance.now(); if (w > 0) await sleep(w); } else await sleep(i === 0 ? 350 : span * 0.82 / n); await this.ov('reveal', i); } })();
         this.after.push(async () => {
           await reveals;
           if (!speech) await sleep(c.dry ? 0 : o.ms ?? 1800);
@@ -571,7 +597,8 @@ export class Session {
         const o = typeof v === 'string' ? { title: v } : v;
         this.chapterNo++;
         this.chapters.push({ at: this.clock(), title: o.title });
-        this.state.chapter = [o.number === false ? '' : String(this.chapterNo), o.title];
+        // "2/4" when the script's chapter count is known, so viewers keep their place without an agenda slide.
+        this.state.chapter = [o.number === false ? '' : String(this.chapterNo) + (c.chapterTotal > 1 ? '/' + c.chapterTotal : ''), o.title];
         await this.ov('chapter', ...this.state.chapter);
         return v;
       }
@@ -584,6 +611,62 @@ export class Session {
       case 'screenshot': { const f = resolve(this.outDir, typeof v === 'string' ? v : 'shot-' + Date.now() + '.png'); await p.screenshot({ path: f }); return f; }
       default: throw new Error('unknown step key "' + k + '"');
     }
+  }
+
+  // ---- voice/action alignment ------------------------------------------------
+  // For each action of a step: ms from the start of its sentence to the moment it should land, when the
+  // sentence mentions what the action shows (its label/text), or when the step says so with at:.
+  async planCues(st, actions, voiced) {
+    const out = { phrases: {} }, say = voiced.text, opts = { lang: voiced.voice?.lang, pronounce: voiced.voice?.pronounce };
+    for (const [i, k] of actions.entries()) {
+      if (!CUEABLE.has(k)) continue;
+      const v = st[k];
+      const at = (v && typeof v === 'object' && !Array.isArray(v) ? v.at : undefined) ?? (i === 0 ? st.at : undefined);
+      if (at === false || at === 'start') continue;
+      if (typeof at === 'number') { out[i] = at; continue; }
+      if (at === 'end') { out[i] = voiced.ms; continue; }
+      const f = findPhrase(say, typeof at === 'string' ? [at] : await this.labelsOf(k, v));
+      if (f) { out[i] = timeAt(say, f.index, voiced, opts); out.phrases[i] = f.text; }
+      else if (typeof at === 'string') console.error('[demo-studio] at: "' + at + '" is not in the sentence; the action runs at the start');
+    }
+    return out;
+  }
+  // The words a viewer would hear for an action's target: its text, accessible name, label, typed value.
+  async labelsOf(k, v) {
+    if (v == null || v === true || v === 'off' || v === 'out' || v === false) return [];
+    if (k === 'scroll') return v.to ? this.labelsOf('click', v.to) : [];
+    if (k === 'press') return [];
+    if (typeof v === 'string') {
+      if (/^[et]\d+$/.test(v)) return this.idLabels(v);
+      const t = /^text=["']?(.+?)["']?$/.exec(v); if (t) return [t[1]];
+      const n = /\[name=["'](.+?)["']\]/.exec(v); if (n) return [n[1]];
+      return [];
+    }
+    if (Array.isArray(v) || typeof v !== 'object') return [];
+    if (v.node) return this.idLabels(v.node);
+    if (v.target !== undefined) return this.labelsOf(k, v.target);
+    const own = [v.name, v.label, v.placeholder, v.title, v.alt, v.text, v.value].filter(x => typeof x === 'string');
+    return own.length ? own : typeof v.sel === 'string' ? this.labelsOf(k, v.sel) : [];
+  }
+  async idLabels(id) {
+    return this.page.evaluate(id => {
+      const el = document.querySelector('[data-ds-id="' + id + '"]'); if (!el) return [];
+      const lab = el.labels && el.labels[0] ? el.labels[0].innerText : null;
+      return [el.getAttribute('aria-label'), lab, el.getAttribute('placeholder'), (el.innerText || '').trim().split('\n')[0].slice(0, 80), el.title].filter(Boolean);
+    }, id).catch(() => []);
+  }
+  // After a recording: actions that landed long after their sentence, annotations not tied to their words,
+  // silent actions fired back to back. Written to sync.json and returned for the agent to review.
+  syncReport() {
+    const notes = [], L = this.syncLog;
+    for (const [i, e] of L.entries()) {
+      const tag = '#' + e.step + ' ' + e.key;
+      if (e.voice && e.end > e.voice.end + 1200) notes.push(tag + ' xong sau khi câu nói đã hết ' + ((e.end - e.voice.end) / 1000).toFixed(1) + ' s: chia câu, hoặc dời thao tác sang câu kế');
+      if (e.voice && ANNOT.has(e.key) && CUEABLE.has(e.key) && !e.anchored && e.voice.end - e.voice.start > 4500) notes.push(tag + ' chưa neo vào lời (câu ' + ((e.voice.end - e.voice.start) / 1000).toFixed(1) + ' s): thêm at: "cụm từ" hoặc nhắc tên phần tử trong câu');
+      const prev = L[i - 1];
+      if (prev && !e.voice && !prev.voice && POINTER.has(e.key) && POINTER.has(prev.key) && e.at - prev.end < 350) notes.push(tag + ' theo ngay sau #' + prev.step + ' ' + prev.key + ' không lời: thêm một câu, hoặc gộp vào một bước có say');
+    }
+    return notes;
   }
 
   // Remove [from, to) of recording time from the final cut (failed or rejected steps).
@@ -622,6 +705,9 @@ export class Session {
     await this.browser.close().catch(() => {});
     stopWorkers();
     if (rec && finalizeVideo) {
+      const sync = this.syncReport();
+      await writeFile(join(this.outDir, 'sync.json'), JSON.stringify({ notes: sync, actions: this.syncLog }, null, 2));
+      if (sync.length) result.sync = sync.slice(0, 15);
       Object.assign(result, await finalize({ raw, outDir: this.outDir, name: this.cfg.name || 'demo', segments: this.narrator.segments, chapters: this.chapters, cuts: this.cuts, music: this.cfg.music, fps: this.cfg.output.fps, frame, size: this.cfg.output }));
       await writeFile(join(this.outDir, 'timeline.json'), JSON.stringify({ narration: this.narrator.segments.map(({ file, ...s }) => s), chapters: this.chapters, cuts: this.cuts, apps: this.staged ? this.switches : undefined }, null, 2));
     }
