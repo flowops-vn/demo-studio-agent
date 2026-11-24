@@ -61,9 +61,14 @@ export class Narrator {
     return synth(text, { provider: 'say', name: v.fallbackVoice || 'Linh', wpm: v.fallbackWpm });
   }
   async _say(text, { caption = this.captions, markStarted, voice, label } = {}) {
-    const clip = await this.clipFor(text, voice || this.voice);
+    const v = voice || this.voice;
+    const clip = await this.clipFor(text, v);
+    // A breath between consecutive sentences, as a presenter takes (voice.gap ms).
+    const gap = this.dry ? 0 : v.gap ?? 300;
+    if (gap && this.lastEnd) { const w = this.lastEnd + gap - performance.now(); if (w > 0) await sleep(w); }
     this.speaking = true;
-    markStarted?.();
+    // Steps use this to time their actions against the words (cues.js).
+    markStarted?.({ ms: clip.ms, voiced: clip.voiced, wall: performance.now(), text, voice: v });
     const start = this.clock();
     // Dialogue lines carry the speaker's name in the caption ("Chị Lan: …"); the voice does not say it.
     const chunks = chunkText(text).map((c, i) => (label && i === 0 ? label + ': ' + c : c)), total = chunks.reduce((s, c) => s + c.length, 0) || 1;
@@ -76,7 +81,7 @@ export class Narrator {
       await Promise.all([this.live && clip.file ? play(clip.file) : null, sleep(clip.ms)]);
     } finally {
       timers.forEach(clearTimeout); if (caption) this.onCaption?.(null);
-      this.speaking = false;
+      this.speaking = false; this.lastEnd = performance.now();
       this.onEnd?.();
     }
     return seg;

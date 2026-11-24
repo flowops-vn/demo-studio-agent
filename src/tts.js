@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { run } from './proc.js';
 import { spoken } from './speech.js';
+import { voicedSpans } from './cues.js';
 
 export const CACHE = process.env.DEMO_STUDIO_CACHE || join(homedir(), '.cache', 'demo-studio', 'tts');
 
@@ -43,7 +44,9 @@ async function synthOnce(text, voice) {
     }
     if (lastErr) throw new Error('tts failed (' + voice.provider + '): ' + lastErr.message + (voice.provider === 'edge' ? ' — network/DNS issue? retry, or use voice: {provider: say, name: Linh} offline' : ''));
   }
-  return { file, ms: await probeMs(file) };
+  const ms = await probeMs(file);
+  // Speech/pause structure, used to time actions against the words (cues.js).
+  return { file, ms, voiced: await voicedSpans(file, ms).catch(() => null) };
 }
 
 // Synthesize many texts with bounded concurrency; returns Map(text -> {file, ms}).
