@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { run } from './proc.js';
+import { spoken } from './speech.js';
 
 export const CACHE = process.env.DEMO_STUDIO_CACHE || join(homedir(), '.cache', 'demo-studio', 'tts');
 
@@ -27,6 +28,8 @@ export function synth(text, voice = DEFAULT_VOICE) {
 }
 async function synthOnce(text, voice) {
   voice = { ...DEFAULT_VOICE, ...voice };
+  // Captions keep the written text; the voice reads its spoken form (numbers, dates, codes, acronyms).
+  if (voice.normalize !== false) text = spoken(text, { lang: voice.lang, pronounce: voice.pronounce });
   const key = createHash('sha1').update(JSON.stringify([voice.provider, voice.name, voice.rate, voice.pitch, voice.model, voice.style, text])).digest('hex').slice(0, 16);
   await mkdir(CACHE, { recursive: true });
   const file = join(CACHE, key + '.mp3');

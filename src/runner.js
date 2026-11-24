@@ -5,6 +5,7 @@ import { dirname, resolve } from 'node:path';
 import YAML from 'yaml';
 import { Session } from './session.js';
 import { applyProjectTheme } from './theme.js';
+import { lintNarration } from './speech.js';
 
 export async function loadScript(file) {
   const doc = YAML.parse(await readFile(file, 'utf8'));
@@ -26,16 +27,32 @@ export async function loadScript(file) {
 }
 
 // Collect every narration string so TTS runs before the browser opens.
-export function narrationOf(steps) { return steps.map(s => (typeof s === 'string' ? s : s.say)).filter(Boolean); }
+// With a session, dialogue lines (as: name) come back with their voice.
+export function narrationOf(steps, session) {
+  return steps.map(s => (typeof s === 'string' ? { say: s } : s)).filter(s => s?.say).map(s => {
+    if (!session) return s.say;
+    try { return { text: s.say, voice: session.voiceFor(s) }; } catch { return { text: s.say }; }
+  });
+}
+// Speech review: long sentences, stiff written phrasing, mixed forms of address, unknown acronyms.
+export function lintScript(doc) {
+  const items = (doc.steps || []).map((s, index) => ({ index, text: typeof s === 'string' ? s : s?.say })).filter(x => x.text);
+  return lintNarration(items, { pronounce: { ...(doc.pronounce || {}), ...(doc.voice?.pronounce || {}) } });
+}
 
 export async function runScript(doc, overrides = {}, log = console.error) {
   const { steps = [], ...cfg } = doc;
   const session = new Session({ ...cfg, ...overrides });
-  if (session.cfg.dry) session.cfg.fastDry = true; // `run --dry` only checks that steps resolve
+  if (session.cfg.dry) {
+    session.cfg.fastDry = true; // `run --dry` only checks that steps resolve
+    const l = lintScript(doc);
+    log('narration: ~' + l.estSeconds + ' s spoken' + (l.warnings.length ? ', ' + l.warnings.length + ' speech notes:' : ', no speech notes'));
+    for (const w of l.warnings) log('  speech ' + w);
+  }
   const from = overrides.from ?? 0, to = overrides.to ?? steps.length;
   if (!session.cfg.dry) {
     log('tts: synthesizing ' + narrationOf(steps.slice(from, to)).length + ' narration clips (' + session.cfg.voice.provider + ' ' + session.cfg.voice.name + ')');
-    await session.narrator.prepare(narrationOf(steps.slice(from, to)));
+    await session.narrator.prepare(narrationOf(steps.slice(from, to), session));
   }
   log(session.cfg.projectTheme ? 'theme: ' + session.cfg.projectTheme : 'theme: none (no .demo-studio/theme.yaml in this codebase; create one with: demo-studio theme init --url <app url>)');
   await session.start();

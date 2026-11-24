@@ -68,6 +68,14 @@ derived from its CSS variables / Tailwind config / DESIGN.md / logo files and th
 preview PNGs. `run` and `serve` pick the file up by walking up from the script (then the cwd); a script's
 own `theme:`/`frame:` keys still win. `examples/.demo-studio/theme.yaml` is the sample.
 
+## Spoken narration
+
+`say:` lines are written as on screen; the voice reads a spoken Vietnamese form (`src/speech.js`: money,
+percentages, dates, times, phone numbers, plates, codes, acronyms, domains, plus project pronunciations from
+`.demo-studio/pronounce.yaml`), while captions keep the written text. `demo-studio lint script.yaml --spoken`
+reviews the narration (sentence length, written-style wording, mixed forms of address, unknown acronyms).
+`voices:` + `as:` give role-play lines their own voice. Writing guide: `skills/demo-video/NARRATION.md`.
+
 ## Output folder
 
 `<name>.mp4`, `<name>.srt`, `chapters.txt`, `contact.jpg`, `timeline.json` (narration/chapter

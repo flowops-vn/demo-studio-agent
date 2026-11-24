@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import YAML from 'yaml';
 import { Session } from './session.js';
+import { narrationOf } from './runner.js';
 
 export const STATE_DIR = join(homedir(), '.cache', 'demo-studio');
 export const stateFile = port => join(STATE_DIR, 'server-' + port + '.json');
@@ -36,7 +37,7 @@ export async function serve(config, port = 7788) {
           busy = true;
           const started = performance.now();
           // Synthesize every sentence of the batch in parallel without blocking the first action.
-          if (!session.cfg.dry) session.narrator.prepare(steps.map(s => (typeof s === 'string' ? s : s.say)).filter(Boolean))?.catch(() => {});
+          if (!session.cfg.dry) session.narrator.prepare(narrationOf(steps, session))?.catch(() => {});
           const done = [];
           for (const st of steps) {
             const t0 = session.clock(), w0 = performance.now();

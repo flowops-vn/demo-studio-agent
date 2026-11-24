@@ -28,7 +28,7 @@ export function findTestingChrome() {
 // Drop value keys (e.g. the text to type) so they are not mistaken for target keys.
 const omit = (v, keys) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).filter(([k]) => !keys.includes(k))) : v);
 const TARGET_KEYS = ['sel', 'css', 'role', 'name', 'text', 'label', 'placeholder', 'testId', 'alt', 'title', 'nth', 'exact', 'within', 'ref', 'target'];
-const MODIFIERS = new Set(['say', 'wait_say', 'lead', 'hold', 'id', 'note', 'keep', 'async', 'on']);
+const MODIFIERS = new Set(['say', 'wait_say', 'lead', 'hold', 'id', 'note', 'keep', 'async', 'on', 'as']);
 // Device presets for apps: phones get a touch-style dot cursor and mobile emulation.
 export const DEVICES = {
   phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 },
@@ -48,8 +48,11 @@ export function normalizeConfig(c = {}) {
   const cfg = { ...DEFAULTS, ...c };
   if (Array.isArray(cfg.viewport)) cfg.viewport = { width: cfg.viewport[0], height: cfg.viewport[1] };
   cfg.output = { ...DEFAULTS.output, ...(c.output || {}) };
-  cfg.voice = { ...DEFAULT_VOICE, ...(c.voice || {}) };
-  cfg.appsSpec = c.apps;
+  // The voice reads the spoken form of each line in the session language, with the project's own pronunciations.
+  cfg.voice = { ...DEFAULT_VOICE, lang: cfg.locale, ...(c.voice || {}), pronounce: { ...(c.pronounce || {}), ...(c.voice?.pronounce || {}) } };
+  // Extra voices for dialogue lines (step key as: name), each a variation of the main voice.
+  cfg.voices = Object.fromEntries(Object.entries(c.voices || {}).map(([k, v]) => [k, { ...cfg.voice, ...(typeof v === 'string' ? { name: v } : v) }]));
+  cfg.appsSpec = c.apps; cfg.voiceSpec = c.voice; cfg.voicesSpec = c.voices;
   cfg.apps = normalizeApps(c, cfg);
   if (cfg.mode === 'live') { cfg.headed ??= true; cfg.live = true; cfg.record ??= false; }
   else if (cfg.mode === 'dry') { cfg.headed ??= false; cfg.dry = true; cfg.record = false; cfg.cursorSpeed = 4; cfg.typingDelay = 0; }
@@ -88,6 +91,12 @@ export class Session {
     const c = this.cfg;
     if (!c.dry) prewarm(c.voice); // e.g. load the local VieNeu model while the browser starts
     this.narrator = new Narrator({ voice: c.voice, live: c.live, dry: c.dry, clock: () => this.clock(), captions: c.captions, onCaption: t => { this.state.caption = t; this.ov('caption', t); } });
+  }
+  voiceFor(st) {
+    if (!st?.as) return this.cfg.voice;
+    const v = this.cfg.voices[st.as];
+    if (!v) throw new Error('unknown voice "' + st.as + '" (voices: ' + (Object.keys(this.cfg.voices).join(', ') || 'none declared') + ')');
+    return v;
   }
   clock = () => (this.rec ? this.rec.time() : performance.now() - this.t0);
   // Per-app state; actions always run against the current app (`on: name` switches).
@@ -380,6 +389,7 @@ export class Session {
     // A beat with its own sentence starts after the previous sentence; a silent beat continues the current one.
     if (this.cfg.asyncSay && st.say) { await this.narrator.pending; if (this.pendingAfter) { await this.pendingAfter; this.pendingAfter = null; } }
     if (st.on) await this.use(st.on);
+    const voice = this.voiceFor(st);
     // Fail fast on element ids that the page no longer has (instead of a 15 s locator timeout), before anything is said.
     const ids = [...JSON.stringify(st).matchAll(/"(?:node"\s*:\s*")?([et]\d+)"/g)].map(m => m[1]).filter(x => /^[et]\d+$/.test(x));
     if (ids.length) {
@@ -392,7 +402,7 @@ export class Session {
     if (this.cfg.autoClear && st.say && !st.keep) await this.ov('clear');
     let speech = null;
     if (st.say) {
-      speech = this.narrator.say(st.say);
+      speech = this.narrator.say(st.say, st.as ? { voice, label: voice.label ?? st.as } : {});
       // Act shortly after the voice starts, but never wait on a slow TTS longer than leadMax.
       if (actions.length && !this.cfg.dry) {
         if (this.cfg.live) await Promise.race([speech.started.then(() => sleep(st.lead ?? 450)), sleep(this.cfg.leadMax ?? 1600)]);
@@ -408,6 +418,7 @@ export class Session {
     // Mark the mutation count before this beat acts; a later {wait: {change}} compares against it.
     if (actions.some(k => k !== 'wait')) this.mutMark = await this.page.evaluate(() => window.__dsMut?.n ?? 0).catch(() => null);
     if (st.on) logged.on = st.on;
+    if (st.as) logged.as = st.as;
     if (st.say) logged.say = st.say;
     for (const k of actions) logged[k] = await this.action(k, st[k], st, speech);
     const hooks = this.after.splice(0);
@@ -535,7 +546,7 @@ export class Session {
         await this.unzoom();
         await this.ov('slide', o);
         const n = o.bullets?.length || 0;
-        const span = st.say ? await this.narrator.durationOf(st.say) : n * 1100;
+        const span = st.say ? await this.narrator.durationOf(st.say, this.voiceFor(st)) : n * 1100;
         // Bullets reveal across the narration while later keys of this step (e.g. draw) run.
         const reveals = (async () => { for (let i = 0; i < n; i++) { await sleep(c.dry ? 0 : (i === 0 ? 350 : span * 0.82 / n)); await this.ov('reveal', i); } })();
         this.after.push(async () => {
@@ -592,7 +603,10 @@ export class Session {
     let rec = null;
     if (this.rec) { await sleep(600); rec = await this.rec.stop(); }
     const scriptFile = join(this.outDir, 'script.yaml');
-    const { mode, headed, live, dry, record, outDir, cdpPort, apps, appsSpec, projectTheme, ownLook, ...keep } = this.cfg;
+    const { mode, headed, live, dry, record, outDir, cdpPort, apps, appsSpec, projectTheme, projectPronounce, ownLook, voices, pronounce, ...keep } = this.cfg;
+    if (pronounce && !projectPronounce && Object.keys(pronounce).length) keep.pronounce = pronounce;
+    keep.voice = this.cfg.voiceSpec; delete keep.voiceSpec; if (keep.voice === undefined) delete keep.voice;
+    if (this.cfg.voicesSpec) keep.voices = this.cfg.voicesSpec; delete keep.voicesSpec;
     if (ownLook) { keep.theme = ownLook.theme; keep.frame = ownLook.frame; for (const k of ['theme', 'frame']) if (keep[k] === undefined) delete keep[k]; }
     await writeFile(scriptFile, YAML.stringify({ ...keep, ...(appsSpec ? { apps: appsSpec } : {}), steps: this.log }, { lineWidth: 0 }));
     result.script = scriptFile;
