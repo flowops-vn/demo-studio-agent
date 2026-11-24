@@ -12,7 +12,7 @@ Chrome pinch-zoom, Microsoft Edge neural TTS (free, good Vietnamese) and ffmpeg.
 ## Install (Claude Code plugin)
 
 ```
-/plugin marketplace add <github-owner>/demo-studio-agent      # or the repo's git URL
+/plugin marketplace add flowops-vn/demo-studio-agent
 /plugin install demo-studio@demo-studio-agent
 ```
 
