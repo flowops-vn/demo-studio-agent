@@ -9,6 +9,11 @@ import YAML from 'yaml';
 import { loadScript, runScript } from '../src/runner.js';
 import { serve } from '../src/server.js';
 import { listVoices, synth, stopWorkers } from '../src/tts.js';
+import { applyProjectTheme, findThemeFile, initTheme, previewTheme, THEME_FILE } from '../src/theme.js';
+import { findTestingChrome } from '../src/session.js';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
 
 const HELP = 'demo-studio <command>\n\n' +
   '  run <script.yaml> [--live] [--record] [--dry] [--headed] [--out DIR] [--from N] [--to N] [--keep-partial]\n' +
@@ -21,13 +26,17 @@ const HELP = 'demo-studio <command>\n\n' +
   '  look [--app NAME|all]                   numbered visible controls + text (targets: e7, t12)\n' +
   '  snap | peek [--app NAME] | undo | status | stop   aria tree / screenshot / cut last step / finish\n' +
   '        multi-app scripts declare apps: {driver: {url, device: phone, storageState}, …}; steps pick one with on: driver\n' +
+  '  theme init [--url URL] [--dir REPO] [--storage auth.json] [--force]\n' +
+  '        derive the codebase\'s look (accent, font, logo, wallpaper) into REPO/.demo-studio/theme.yaml; run/serve pick it up\n' +
+  '  theme preview [--url URL] [--storage auth.json]   PNGs of the theme on the app + title card, for review\n' +
+  '  theme show                              which theme file applies here\n' +
   '  install                                 download Chrome for Testing (needed for headless runs > 30 s)\n' +
   '  voices [lang=vi] | voices vieneu        list Edge neural voices / local VieNeu voices\n' +
   '  say <text> [--voice NAME] [--provider P] preview a narration line on the speakers\n' +
   '  auth <url> --save auth.json             log in by hand in a real window; saves storageState\n';
 
 const argv = process.argv.slice(2);
-const BOOL = new Set(['json', 'no-observe', 'live', 'dry', 'record', 'headed', 'keep-partial', 'no-play']);
+const BOOL = new Set(['json', 'no-observe', 'live', 'dry', 'record', 'headed', 'keep-partial', 'no-play', 'force']);
 const cmd = argv.shift();
 const flags = {}, pos = [];
 for (let i = 0; i < argv.length; i++) {
@@ -63,6 +72,8 @@ async function main() {
     }
     case 'serve': {
       const doc = flags.config ? await loadScript(flags.config) : {};
+      if (!flags.config) await applyProjectTheme(doc, process.cwd());
+      console.error(doc.projectTheme ? 'theme: ' + doc.projectTheme : 'theme: none (demo-studio theme init --url <app url> gives videos the codebase look)');
       delete doc.steps;
       const cfg = { ...doc, mode: modeOf() };
       if (flags.record) cfg.record = true;
@@ -96,6 +107,26 @@ async function main() {
     case 'undo': return print(await api('/undo', { method: 'POST' }));
     case 'status': return print(await api('/status'));
     case 'stop': return print(await api('/stop', { method: 'POST' }));
+    case 'theme': {
+      const sub = pos[0] || 'show';
+      const gitRoot = d => { try { return execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: d, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return d; } };
+      const root = resolve(flags.dir || gitRoot(process.cwd()));
+      if (sub === 'show') { const f = findThemeFile(process.cwd()); return print(f ? f + '\n\n' + await readFile(f, 'utf8') : 'no ' + THEME_FILE + ' here or above; run: demo-studio theme init --url <app url>'); }
+      const exe = findTestingChrome();
+      const browser = await chromium.launch({ headless: true, ...(exe ? { executablePath: exe } : { channel: 'chrome' }), handleSIGHUP: false });
+      try {
+        if (sub === 'init') {
+          const r = await initTheme({ browser, root, url: flags.url, storageState: flags.storage && resolve(flags.storage), force: !!flags.force });
+          const p = await previewTheme({ browser, themeFile: r.file, url: flags.url, storageState: flags.storage && resolve(flags.storage), outDir: join(tmpdir(), 'demo-studio-theme-' + Date.now()) });
+          print({ ...r, ...p });
+        } else if (sub === 'preview') {
+          const f = findThemeFile(flags.dir || process.cwd());
+          if (!f) throw new Error('no ' + THEME_FILE + ' found; run demo-studio theme init first');
+          print(await previewTheme({ browser, themeFile: f, url: flags.url, storageState: flags.storage && resolve(flags.storage), outDir: flags.out ? resolve(flags.out) : join(tmpdir(), 'demo-studio-theme-' + Date.now()) }));
+        } else throw new Error('usage: demo-studio theme init|preview|show');
+      } finally { await browser.close(); }
+      return;
+    }
     case 'install': {
       const cli = new URL('../node_modules/playwright-core/cli.js', import.meta.url).pathname;
       await new Promise((r, j) => spawn(process.execPath, [cli, 'install', 'chromium'], { stdio: 'inherit' }).on('close', c => (c ? j(new Error('install failed')) : r())));

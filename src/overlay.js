@@ -2,7 +2,10 @@
 // context.addInitScript, so it must stay self-contained (no imports, no closures).
 export function overlayInit(theme) {
   if (window.__ds) return;
-  const T = Object.assign({ accent: '#4f46e5', font: 'Inter, "SF Pro Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', dim: 0.55 }, theme || {});
+  const T = Object.assign({ accent: '#4f46e5', onAccent: '#fff', surface: '#0f1222', onSurface: '#fff', radius: 14, logoBg: '#fff', font: 'Inter, "SF Pro Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif', dim: 0.55 }, theme || {});
+  // Theme colours may be any CSS colour, so translucency goes through color-mix rather than hex suffixes.
+  const A = (c, p) => 'color-mix(in srgb,' + c + ' ' + p + '%,transparent)';
+  const deep = 'linear-gradient(135deg,' + T.surface + ',color-mix(in srgb,' + T.surface + ' 78%,' + T.accent + '))';
   const css = '\
 :host{all:initial}\
 *{box-sizing:border-box;font-family:' + T.font + '}\
@@ -12,25 +15,27 @@ export function overlayInit(theme) {
 .ripple{position:absolute;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;border:3px solid ' + T.accent + ';opacity:.9;animation:rip .55s ease-out forwards;z-index:8}\
 @keyframes rip{from{transform:scale(.3);opacity:.95}to{transform:scale(1.6);opacity:0}}\
 .spot{position:absolute;border-radius:12px;box-shadow:0 0 0 200vmax rgba(8,10,20,' + T.dim + ');transition:all .45s cubic-bezier(.4,0,.2,1),opacity .35s;opacity:0}\
-.ring{position:absolute;border-radius:10px;border:3px solid ' + T.accent + ';box-shadow:0 0 0 6px ' + T.accent + '33,0 0 24px ' + T.accent + '66;transition:all .3s ease,opacity .3s;opacity:0}\
-.call{position:absolute;max-width:360px;min-width:180px;background:#0f1222;color:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 18px 48px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.06);opacity:0;transition:opacity .3s ease,transform .3s ease;font-size:16px;line-height:1.45}\
-.call b{display:block;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:' + T.accent + ';filter:brightness(1.6);margin-bottom:4px}\
-.call .ar{position:absolute;width:14px;height:14px;background:#0f1222;transform:rotate(45deg)}\
-.cap{position:absolute;left:50%;bottom:44px;transform:translate(-50%,12px);max-width:78%;background:rgba(12,14,26,.86);color:#fff;font-size:22px;line-height:1.4;font-weight:500;padding:12px 22px;border-radius:14px;text-align:center;opacity:0;transition:opacity .3s,transform .3s;backdrop-filter:blur(6px)}\
+.ring{position:absolute;border-radius:10px;border:3px solid ' + T.accent + ';box-shadow:0 0 0 6px ' + A(T.accent, 20) + ',0 0 24px ' + A(T.accent, 40) + ';transition:all .3s ease,opacity .3s;opacity:0}\
+.call{position:absolute;max-width:360px;min-width:180px;background:' + T.surface + ';color:' + T.onSurface + ';border-radius:' + T.radius + 'px;padding:14px 16px;box-shadow:0 18px 48px rgba(0,0,0,.35),0 0 0 1px rgba(255,255,255,.06);opacity:0;transition:opacity .3s ease,transform .3s ease;font-size:16px;line-height:1.45}\
+.call b{display:block;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:color-mix(in srgb,' + T.accent + ' 55%,#fff);margin-bottom:4px}\
+.call .ar{position:absolute;width:14px;height:14px;background:' + T.surface + ';transform:rotate(45deg)}\
+.cap{position:absolute;left:50%;bottom:44px;transform:translate(-50%,12px);max-width:78%;background:' + A(T.surface, 88) + ';color:' + T.onSurface + ';font-size:22px;line-height:1.4;font-weight:500;padding:12px 22px;border-radius:' + T.radius + 'px;text-align:center;opacity:0;transition:opacity .3s,transform .3s;backdrop-filter:blur(6px)}\
 .cap.on{opacity:1;transform:translate(-50%,0)}\
 @media (max-width:640px){.cap{max-width:94%;width:max-content;font-size:17px;line-height:1.35;padding:8px 14px;border-radius:12px;bottom:88px}.chap{left:12px;top:12px;font-size:13px}.card{padding:0 8vw}.card h1{font-size:30px}.card p{font-size:17px}}\
-.chap{position:absolute;left:24px;top:20px;transform:translateY(-8px);transition:opacity .35s,transform .35s;display:flex;align-items:center;gap:10px;background:rgba(12,14,26,.82);color:#fff;font-size:15px;font-weight:600;padding:8px 14px 8px 10px;border-radius:999px;opacity:0;transition:opacity .3s}\
+.chap{position:absolute;left:24px;top:20px;transform:translateY(-8px);transition:opacity .35s,transform .35s;display:flex;align-items:center;gap:10px;background:' + A(T.surface, 85) + ';color:' + T.onSurface + ';font-size:15px;font-weight:600;padding:8px 14px 8px 10px;border-radius:999px;opacity:0;transition:opacity .3s}\
 .chap.on{opacity:1;transform:none}\
-.chap i{font-style:normal;background:' + T.accent + ';color:#fff;border-radius:999px;min-width:24px;height:24px;display:grid;place-items:center;font-size:13px;padding:0 7px}\
-.card{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:0 9vw;background:radial-gradient(1200px 600px at 20% 10%,' + T.accent + '55,transparent 60%),linear-gradient(135deg,#0b0d1a,#151a33);color:#fff;opacity:0;transition:opacity .5s}\
+.chap i{font-style:normal;background:' + T.accent + ';color:' + T.onAccent + ';border-radius:999px;min-width:24px;height:24px;display:grid;place-items:center;font-size:13px;padding:0 7px}\
+.card{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:flex-start;padding:0 9vw;background:radial-gradient(1200px 600px at 20% 10%,' + A(T.accent, 33) + ',transparent 60%),' + deep + ';color:' + T.onSurface + ';opacity:0;transition:opacity .5s}\
+.card .logo{display:inline-flex;align-items:center;margin-bottom:30px;border-radius:12px;' + (T.logoBg === 'none' ? '' : 'background:' + T.logoBg + ';padding:10px 16px;box-shadow:0 10px 30px rgba(0,0,0,.25)') + '}\
+.card .logo img{height:44px;max-width:300px;display:block;object-fit:contain}\
 .card.on{opacity:1}\
 .card .k{font-size:15px;letter-spacing:.18em;text-transform:uppercase;opacity:.7;margin-bottom:18px}\
 .card h1{font-size:clamp(36px,5vw,68px);line-height:1.1;margin:0 0 18px;font-weight:700;max-width:16em}\
 .card p{font-size:clamp(18px,1.8vw,26px);opacity:.82;margin:0;max-width:34em;line-height:1.45}\
 .keys{position:absolute;left:50%;top:22px;transform:translateX(-50%);display:flex;gap:6px;opacity:0;transition:opacity .25s}\
 .keys.on{opacity:1}\
-.halo{position:absolute;left:0;top:0;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:' + T.accent + '2e;border:2px solid ' + T.accent + '99;transform:translate(-200px,-200px);transition:width .15s,height .15s,margin .15s;z-index:8}\
-.halo.down{width:32px;height:32px;margin:-16px 0 0 -16px;background:' + T.accent + '55}\
+.halo{position:absolute;left:0;top:0;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:' + A(T.accent, 18) + ';border:2px solid ' + A(T.accent, 60) + ';transform:translate(-200px,-200px);transition:width .15s,height .15s,margin .15s;z-index:8}\
+.halo.down{width:32px;height:32px;margin:-16px 0 0 -16px;background:' + A(T.accent, 33) + '}\
 .ink{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible}\
 .ink path{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:1;transition:stroke-dashoffset var(--d,.7s) cubic-bezier(.6,0,.3,1) var(--dl,0s),opacity .3s;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.22))}\
 .ink path.on{stroke-dashoffset:0}\
@@ -38,7 +43,7 @@ export function overlayInit(theme) {
 .inklabel.on{opacity:1}\
 .slide{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:0 10vw;opacity:0;transition:opacity .45s}\
 .slide.on{opacity:1}\
-.slide.dark{background:radial-gradient(1100px 600px at 85% 0%,' + T.accent + '44,transparent 60%),linear-gradient(135deg,#0b0d1a,#161b34);color:#fff}\
+.slide.dark{background:radial-gradient(1100px 600px at 85% 0%,' + A(T.accent, 27) + ',transparent 60%),' + deep + ';color:' + T.onSurface + '}\
 .slide.light{background:#fbfbfd;color:#14172a}\
 .slide.board{background-color:#fdfdfb;background-image:radial-gradient(#d9dbe3 1.2px,transparent 1.2px);background-size:26px 26px;color:#1b1f33}\
 .slide .k{font-size:15px;letter-spacing:.18em;text-transform:uppercase;opacity:.65;margin-bottom:16px}\
@@ -198,7 +203,7 @@ export function overlayInit(theme) {
     caption(text) { ensure(); if (text) { cap.innerHTML = esc(text); cap.classList.add('on'); } else cap.classList.remove('on'); },
     // The chapter pill shows briefly (sticky only when theme.chapterSticky) so it never hides app chrome for long.
     chapter(n, text, ms) { ensure(); clearTimeout(api._ct); if (text) { chap.innerHTML = (n ? '<i>' + esc(n) + '</i>' : '') + esc(text); chap.classList.add('on'); if (!T.chapterSticky) api._ct = setTimeout(() => chap.classList.remove('on'), ms || 4000); } else chap.classList.remove('on'); },
-    card(kicker, title, sub) { ensure(); if (title) { card.innerHTML = (kicker ? '<div class="k">' + esc(kicker) + '</div>' : '') + '<h1>' + esc(title) + '</h1>' + (sub ? '<p>' + esc(sub) + '</p>' : ''); card.classList.add('on'); } else card.classList.remove('on'); },
+    card(kicker, title, sub) { ensure(); if (title) { card.innerHTML = (T.logo ? '<div class="logo"><img src="' + esc(T.logo) + '"></div>' : '') + (kicker ? '<div class="k">' + esc(kicker) + '</div>' : '') + '<h1>' + esc(title) + '</h1>' + (sub ? '<p>' + esc(sub) + '</p>' : ''); card.classList.add('on'); } else card.classList.remove('on'); },
     keys(combo, ms) { ensure(); keys.innerHTML = String(combo).split('+').map(k => '<span>' + esc(k) + '</span>').join(''); keys.classList.add('on'); clearTimeout(api._kt); api._kt = setTimeout(() => keys.classList.remove('on'), ms || 1200); },
     press(on) { ensure(); halo.classList.toggle('down', !!on); },
     // Hand-drawn annotation tracked to an element: circle | box | underline | arrow (with optional label text).

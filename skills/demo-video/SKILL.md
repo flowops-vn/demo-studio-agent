@@ -23,6 +23,30 @@ recordings Chrome for Testing (`demo-studio install`, once). Live demos use the 
 Headless is the right default for recordings: fixed viewport, no window chrome, runs in the
 background without touching the user's screen. Use headed only for live presenting.
 
+## Look: the theme comes from the codebase being demoed
+
+Videos and live demos take their colours, font, logo and wallpaper from the product's own codebase,
+not from demo-studio defaults. The theme is a file in that repo, `.demo-studio/theme.yaml`, found by
+walking up from the demo script (then the cwd); `run`/`serve` print `theme: <path>` or `theme: none`.
+
+Before the first recording or live demo of a codebase:
+
+1. `demo-studio theme show` (from the repo). If it prints a file, use it as is.
+2. Otherwise create it: `demo-studio theme init --url <app url> [--dir <repo root>] [--storage auth.json]`.
+   It reads the code first (CSS custom properties such as `--primary`/`--brand`, Tailwind `primary`,
+   `next/font`, DESIGN.md, `*logo*.svg` or `brand/` files), then the running app (most used colour on
+   buttons/links, body font, logo element, favicon), and prints the sources plus two PNGs.
+3. Read the PNGs (`preview`: the theme on the app, framed; `title`: the title card). If the accent is not
+   the brand colour (e.g. a dark nav colour), or the logo is wrong, fix the yaml by hand from what the
+   code/brand files say, then `demo-studio theme preview --url <app url>` again.
+4. Tell the user the file was added to their repo; committing it is their call.
+
+Keys: `accent` (cursor halo, rings, chapter badge, slide bullets) · `onAccent` · `surface`/`onSurface`
+(captions, callouts, title cards, dark slides) · `ink` (hand-drawn marks) · `font` · `radius` · `logo`
+(title cards; `logoBg: none` removes the white chip) · `frame` (wallpaper + rounded window; also the
+multi-app stage). A script's own `theme:`/`frame:` keys override single values; `theme: false` ignores the
+project theme, `frame: false` records full-bleed.
+
 ## Live demo (improvise — like browser-use)
 
 For "live demo", open the visible browser right away and drive it beat by beat; do not explore
@@ -125,9 +149,9 @@ name: tao-don-ai
 baseURL: http://localhost:3110          # goto paths are relative to this
 viewport: [1440, 810]                  # CSS px; rendered to output 1920x1080
 voice: { provider: edge, name: vi-VN-HoaiMyNeural, rate: "+5%" }   # male: vi-VN-NamMinhNeural
-theme: { accent: "#4f46e5", cursor: halo, ink: "#ff2d55" }   # cursor: halo|arrow|dot; chapterSticky: true
+theme: { cursor: halo }                # overrides on top of .demo-studio/theme.yaml; cursor: halo|arrow|dot; chapterSticky: true
 autoZoom: true                         # Screen Studio-style: zoom in on clicks/typing, out on overview beats (or a scale, e.g. 1.6)
-frame: { background: aurora, padding: 72, radius: 20 }   # wallpaper + rounded corners + shadow (aurora|midnight|sunset|mist|ocean|#hex|linear:#a,#b|image.jpg)
+frame: { padding: 72, radius: 20 }     # default from the project theme; background: aurora|midnight|sunset|mist|ocean|#hex|linear:#a,#b|image.jpg; false = full-bleed
 storageState: auth.json
 music: { file: bgm.mp3, volume: 0.1 }  # optional, auto-ducked under the voice
 steps:

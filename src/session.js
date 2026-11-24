@@ -161,7 +161,7 @@ export class Session {
       const page = await a.context.newPage();
       await this.adopt(page, a);
       // Dark blank page so title cards/slides before the first goto never flash white.
-      await page.setContent('<html style="background:#0b0d1a"><body></body></html>').catch(() => {});
+      await page.setContent('<html style="background:' + (a.theme.surface || '#0b0d1a') + '"><body></body></html>').catch(() => {});
       this.apps[a.name] = a;
     }
     this.cur = this.apps[apps[0].name];
@@ -592,7 +592,8 @@ export class Session {
     let rec = null;
     if (this.rec) { await sleep(600); rec = await this.rec.stop(); }
     const scriptFile = join(this.outDir, 'script.yaml');
-    const { mode, headed, live, dry, record, outDir, cdpPort, apps, appsSpec, ...keep } = this.cfg;
+    const { mode, headed, live, dry, record, outDir, cdpPort, apps, appsSpec, projectTheme, ownLook, ...keep } = this.cfg;
+    if (ownLook) { keep.theme = ownLook.theme; keep.frame = ownLook.frame; for (const k of ['theme', 'frame']) if (keep[k] === undefined) delete keep[k]; }
     await writeFile(scriptFile, YAML.stringify({ ...keep, ...(appsSpec ? { apps: appsSpec } : {}), steps: this.log }, { lineWidth: 0 }));
     result.script = scriptFile;
     let raw = rec?.file, frame = this.cfg.frame;
@@ -600,7 +601,7 @@ export class Session {
       // Lay every app's stream onto one canvas; the wallpaper/bezels replace the single-app frame.
       raw = join(this.outDir, '.raw.mp4');
       await compose({ browser: this.browser, apps: this.cfg.apps, files: rec.files, switches: this.switches, totalMs: rec.ms, out: raw, size: this.cfg.output, fps: this.cfg.output.fps,
-        layout: this.cfg.layout || {}, background: (typeof frame === 'object' && frame?.background) || (typeof frame === 'string' ? frame : null) || 'midnight', dir: this.outDir });
+        layout: this.cfg.layout || {}, font: this.cfg.theme?.font, background: (typeof frame === 'object' && frame?.background) || (typeof frame === 'string' ? frame : null) || 'midnight', dir: this.outDir });
       frame = null;
       if (!process.env.DEMO_STUDIO_KEEP_RAW) await Promise.all(Object.values(rec.files).map(f => rm(f, { force: true })));
     }
