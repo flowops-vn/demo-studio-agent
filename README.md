@@ -91,5 +91,6 @@ times), `script.yaml` (what actually ran), `error-*.png` on failures.
 - Chromium only; one active tab per app is recorded at a time (several apps: see `examples/multi.yaml`).
 - Under pinch-zoom, pointer input goes through `page.mouse` (layout px minus visual-viewport offset); if the target is covered it falls back to an unzoomed `locator.click()`.
 - Branded Chrome 158+ exits headless sessions after ~30 s; headless uses Chrome for Testing (`demo-studio install`).
+- Zoom is rationed (see the skill's "Zoom sparingly"): `autoZoom: true` only zooms 1.25× while typing or on tiny targets, ≥ 8 s apart and held ≥ 4 s; `lint` and `sync.json` flag zoom churn.
 - `examples/showcase.yaml` exercises ink, slides, whiteboard, autoZoom and frame.
 - Edge TTS is an unofficial endpoint; fall back to `say` (macOS), `openai` or `gemini`.

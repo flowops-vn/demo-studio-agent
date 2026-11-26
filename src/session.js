@@ -47,8 +47,19 @@ const INK_KEYS = ['text', 'from', 'color', 'ttl', 'width', 'length', 'id', 'ms']
 export const DEFAULTS = {
   mode: 'record', viewport: { width: 1440, height: 810 }, output: { width: 1920, height: 1080, fps: 30 },
   voice: DEFAULT_VOICE, theme: {}, captions: true, autoClear: true, typingDelay: 55, cursorSpeed: 1,
-  timeout: 15000, trimLoads: true, browser: 'auto', locale: 'vi-VN', zoomScale: 1.8, autoZoom: false
+  timeout: 15000, trimLoads: true, browser: 'auto', locale: 'vi-VN', zoomScale: 1.4, autoZoom: false, zoomSpeed: 260
 };
+
+// Calm auto-zoom: a zoom is a cut the eye has to follow, so it is rare, small and slow.
+// Typing zooms (the viewer reads what is typed); a click zooms only on a small target, and never
+// sooner than cooldownMs after the last zoom change; a zoom is held at least minHoldMs.
+export const AUTO_ZOOM = { scale: 1.25, on: ['type'], smallClick: 0.006, cooldownMs: 8000, minHoldMs: 4000 };
+export function autoZoomOf(v) {
+  if (!v) return null;
+  if (v === true) return { ...AUTO_ZOOM };
+  if (typeof v === 'number') return { ...AUTO_ZOOM, scale: v };
+  return { ...AUTO_ZOOM, ...v };
+}
 
 export function normalizeConfig(c = {}) {
   const cfg = { ...DEFAULTS, ...c };
@@ -60,6 +71,7 @@ export function normalizeConfig(c = {}) {
   cfg.voices = Object.fromEntries(Object.entries(c.voices || {}).map(([k, v]) => [k, { ...cfg.voice, ...(typeof v === 'string' ? { name: v } : v) }]));
   cfg.appsSpec = c.apps; cfg.voiceSpec = c.voice; cfg.voicesSpec = c.voices;
   cfg.apps = normalizeApps(c, cfg);
+  cfg.autoZoomSpec = cfg.autoZoom; cfg.autoZoom = autoZoomOf(cfg.autoZoom);
   if (cfg.mode === 'live') { cfg.headed ??= true; cfg.live = true; cfg.record ??= false; }
   else if (cfg.mode === 'dry') { cfg.headed ??= false; cfg.dry = true; cfg.record = false; cfg.cursorSpeed = 4; cfg.typingDelay = 0; }
   else { cfg.headed ??= false; cfg.record ??= true; }
@@ -93,7 +105,7 @@ export class Session {
     this.log = []; this.after = []; this.cuts = []; this.chapters = []; this.chapterNo = 0;
     this.state = { caption: null, chapter: null };
     this.tcounter = 0; this.t0 = performance.now();
-    this.apps = {}; this.switches = []; this.syncLog = [];
+    this.apps = {}; this.switches = []; this.syncLog = []; this.zoomLog = [];
     const c = this.cfg;
     if (!c.dry) prewarm(c.voice); // e.g. load the local VieNeu model while the browser starts
     this.narrator = new Narrator({ voice: c.voice, live: c.live, dry: c.dry, clock: () => this.clock(), captions: c.captions, onCaption: t => { this.state.caption = t; this.ov('caption', t); } });
@@ -340,13 +352,12 @@ export class Session {
   // Move the drawn cursor and the real mouse onto the element. Under pinch-zoom Playwright's
   // locator actions are unreliable, so pointer input goes through page.mouse with coordinates
   // in the space CDP expects (layout px minus the visual-viewport offset).
-  async pointTo(loc, { zoomable = true } = {}) {
+  async pointTo(loc, { zoomable = true, kind = 'click' } = {}) {
     await loc.waitFor({ state: 'visible' });
     let g = await this.ensureVisible(loc);
     const az = this.cfg.autoZoom;
-    if (az && zoomable && !this.zoomed && !this.cfg.dry) {
-      const sc = typeof az === 'number' ? az : 1.5;
-      if (g.w * sc < g.iw * 0.75 && g.h * sc < g.ih * 0.75) { await this.pinch(g.x + g.w / 2, g.y + g.h / 2, sc); this.autoZoomed = true; g = await this.geometry(loc); }
+    if (az && zoomable && !this.zoomed && !this.cfg.dry && this.zoomWanted(az, kind, g)) {
+      await this.pinch(g.x + g.w / 2, g.y + g.h / 2, az.scale, { auto: true }); this.autoZoomed = true; g = await this.geometry(loc);
     }
     const x = g.x + g.w / 2, y = g.y + Math.min(g.h / 2, 24);
     const from = this.cur.cursor || { x: x - 160, y: y + 120 };
@@ -366,15 +377,26 @@ export class Session {
     await this.ov('press', false);
   }
 
-  async pinch(x, y, scale) {
-    await this.cdp.send('Input.synthesizePinchGesture', { x, y, scaleFactor: scale, relativeSpeed: this.cfg.dry ? 3000 : 420, gestureSourceType: 'mouse' });
-    this.zoomed = scale;
+  // Auto-zoom only where it helps reading, and not again right after the last zoom change.
+  zoomWanted(az, kind, g) {
+    const on = az.on || [];
+    const small = (g.w * g.h) / (g.iw * g.ih) <= (az.smallClick ?? 0);
+    if (!(on.includes(kind) || (kind === 'fill' && on.includes('type')) || (kind === 'click' && small))) return false;
+    if (g.w * az.scale >= g.iw * 0.75 || g.h * az.scale >= g.ih * 0.75) return false;
+    const last = this.zoomLog[this.zoomLog.length - 1];
+    return !last || this.clock() - last.at >= (az.cooldownMs ?? 0);
+  }
+  async pinch(x, y, scale, { auto = false } = {}) {
+    await this.cdp.send('Input.synthesizePinchGesture', { x, y, scaleFactor: scale, relativeSpeed: this.cfg.dry ? 3000 : this.cfg.zoomSpeed, gestureSourceType: 'mouse' });
+    this.zoomed = scale; this.zoomedAt = this.clock();
+    this.zoomLog.push({ at: Math.round(this.clock()), dir: 'in', scale, auto, step: this.log.length });
   }
   async unzoom() {
     this.autoZoomed = false;
     if (!this.zoomed) return;
     const vp = this.page.viewportSize() || await this.page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-    try { await this.cdp.send('Input.synthesizePinchGesture', { x: vp.width / 2, y: vp.height / 2, scaleFactor: 1 / this.zoomed, relativeSpeed: 800, gestureSourceType: 'mouse' }); } catch {}
+    try { await this.cdp.send('Input.synthesizePinchGesture', { x: vp.width / 2, y: vp.height / 2, scaleFactor: 1 / this.zoomed, relativeSpeed: this.cfg.dry ? 3000 : this.cfg.zoomSpeed, gestureSourceType: 'mouse' }); } catch {}
+    this.zoomLog.push({ at: Math.round(this.clock()), dir: 'out', step: this.log.length });
     await this.cdp.send('Emulation.setPageScaleFactor', { pageScaleFactor: 1 }).catch(() => {});
     this.zoomed = 0;
   }
@@ -404,7 +426,7 @@ export class Session {
     }
     if (this.rec && this.rec.paused && !this.recOff) { this.rec.resume(); if (this.staged && !this.nudged) { this.nudged = true; await this.nudgeAll(); } }
     const t0 = this.clock();
-    if (this.autoZoomed && !actions.some(k => POINTER.has(k) || k === 'zoom')) await this.unzoom();
+    if (this.autoZoomed && !actions.some(k => POINTER.has(k) || k === 'zoom') && this.clock() - (this.zoomedAt ?? 0) >= (this.cfg.autoZoom?.minHoldMs ?? 0)) await this.unzoom();
     if (this.cfg.autoClear && st.say && !st.keep) {
       // Give the last annotation time to be seen before the next sentence wipes it.
       const shown = performance.now() - (this.lastAnnot || 0), min = this.cfg.minAnnotMs ?? 1400;
@@ -470,7 +492,7 @@ export class Session {
         const loc = this.locator(v);
         const stable = await this.stable(v);
         if ((k === 'check' || k === 'uncheck') && (await loc.isChecked()) === (k === 'check')) return stable;
-        const pt = await this.pointTo(loc);
+        const pt = await this.pointTo(loc, { kind: k === 'hover' ? 'hover' : 'click' });
         if (k === 'hover') { await sleep(c.dry ? 0 : 300); return stable; }
         await this.ov('ripple', pt.x, pt.y);
         await this.press(loc, pt, k === 'dblclick' ? 'dblclick' : 'click', { button: opt(v, 'button'), force: opt(v, 'force') });
@@ -480,7 +502,7 @@ export class Session {
       case 'type': case 'fill': {
         const loc = this.locator(omit(v, ['text', 'value'])); const text = String(v.text ?? v.value ?? '');
         const stable = await this.stable(omit(v, ['text', 'value']));
-        const pt = await this.pointTo(loc);
+        const pt = await this.pointTo(loc, { kind: k });
         await this.ov('ripple', pt.x, pt.y);
         await this.press(loc, pt);
         if (k === 'fill' || v.fast || c.dry) await loc.fill(text);
@@ -666,6 +688,16 @@ export class Session {
       const prev = L[i - 1];
       if (prev && !e.voice && !prev.voice && POINTER.has(e.key) && POINTER.has(prev.key) && e.at - prev.end < 350) notes.push(tag + ' theo ngay sau #' + prev.step + ' ' + prev.key + ' không lời: thêm một câu, hoặc gộp vào một bước có say');
     }
+    notes.push(...this.zoomNotes());
+    return notes;
+  }
+  // Zoom churn makes viewers dizzy: flag more than 3 zoom-ins a minute, and in/out pairs closer than 4 s.
+  zoomNotes() {
+    const Z = this.zoomLog, notes = [];
+    if (!Z.length) return notes;
+    const ins = Z.filter(z => z.dir === 'in').length, rate = ins / Math.max(this.clock() / 60000, 1);
+    if (rate > 3) notes.push('zoom vào ' + ins + ' lần (' + rate.toFixed(1) + '/phút, nên ≤ 3): bớt zoom:, autoZoom để mặc định (true) hoặc tắt; dùng spotlight/circle để chỉ chỗ');
+    for (let i = 1; i < Z.length; i++) if (Z[i - 1].dir === 'in' && Z[i].dir === 'out' && Z[i].at - Z[i - 1].at < 4000) notes.push('#' + Z[i - 1].step + ' zoom vào rồi ra sau ' + ((Z[i].at - Z[i - 1].at) / 1000).toFixed(1) + ' s: giữ zoom qua cả câu hoặc bỏ zoom ở bước này');
     return notes;
   }
 
@@ -706,8 +738,9 @@ export class Session {
     stopWorkers();
     if (rec && finalizeVideo) {
       const sync = this.syncReport();
-      await writeFile(join(this.outDir, 'sync.json'), JSON.stringify({ notes: sync, actions: this.syncLog }, null, 2));
+      await writeFile(join(this.outDir, 'sync.json'), JSON.stringify({ notes: sync, actions: this.syncLog, zooms: this.zoomLog }, null, 2));
       if (sync.length) result.sync = sync.slice(0, 15);
+      result.zooms = this.zoomLog.length;
       Object.assign(result, await finalize({ raw, outDir: this.outDir, name: this.cfg.name || 'demo', segments: this.narrator.segments, chapters: this.chapters, cuts: this.cuts, music: this.cfg.music, fps: this.cfg.output.fps, frame, size: this.cfg.output }));
       await writeFile(join(this.outDir, 'timeline.json'), JSON.stringify({ narration: this.narrator.segments.map(({ file, ...s }) => s), chapters: this.chapters, cuts: this.cuts, apps: this.staged ? this.switches : undefined }, null, 2));
     }

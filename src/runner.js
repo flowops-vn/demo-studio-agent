@@ -47,6 +47,14 @@ export function lintScript(doc) {
   if (outlines.length > 1) r.warnings.push('slide dàn ý xuất hiện ' + outlines.length + ' lần (' + outlines.map(([, i]) => '#' + i).join(' ') + '): chỉ một lần ở đầu video; các phần sau dùng chapter (badge hiện "2/4")');
   const app = obj.filter(([s]) => Object.keys(s).some(k => APP_KEYS.has(k))).map(([, i]) => i);
   if (app.length) for (const [s, i] of obj) if (slideOf(s) && i > app[0] && i < app[app.length - 1]) r.warnings.push('#' + i + ' slide chen giữa lúc đang thao tác: người xem phải đổi ngữ cảnh; dùng chapter, callout hoặc caption. Slide để ở đầu (dàn ý) và cuối (tóm tắt)');
+  // Zoom: each one is a camera move. A few per video, held long enough to read, never in-out-in.
+  const zooms = obj.filter(([s]) => s.zoom != null && s.zoom !== 'out' && s.zoom !== false);
+  const azs = doc.autoZoom, azScale = typeof azs === 'number' ? azs : azs && typeof azs === 'object' ? azs.scale : null;
+  if (zooms.length > 3) r.warnings.push('zoom: ' + zooms.length + ' lần (' + zooms.map(([, i]) => '#' + i).join(' ') + '): zoom nhiều gây nhức mắt; giữ ≤ 3 cho cả video, chỉ ở chỗ chữ nhỏ cần đọc, còn lại dùng spotlight/circle');
+  for (const [s, i] of zooms) { const sc = typeof s.zoom === 'object' ? s.zoom.scale : null; if (sc && sc > 1.6) r.warnings.push('#' + i + ' zoom scale ' + sc + ': quá gắt, dùng 1.3–1.5'); }
+  for (let k = 1; k < zooms.length; k++) if (zooms[k][1] - zooms[k - 1][1] <= 1) r.warnings.push('#' + zooms[k - 1][1] + ' và #' + zooms[k][1] + ' zoom liền nhau: một zoom cho cả đoạn, hoặc bỏ một');
+  if (azScale && azScale > 1.4) r.warnings.push('autoZoom ' + azScale + ': quá gắt cho video hướng dẫn, để true (1.25) hoặc ≤ 1.4');
+  if (azs && zooms.length) r.warnings.push('vừa autoZoom vừa zoom: tay ở ' + zooms.length + ' bước: chọn một kiểu, thường là tắt autoZoom');
   return r;
 }
 

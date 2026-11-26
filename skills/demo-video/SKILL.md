@@ -167,7 +167,7 @@ voice: { provider: edge, name: vi-VN-HoaiMyNeural, rate: "+8%" }   # male: vi-VN
 voices: { khach: { name: vi-VN-NamMinhNeural, label: "Anh Minh" } }   # optional extra voices for role-play lines (as: khach)
 pronounce: { LSP: "lờ ét pê" }         # extra readings; codebase-wide ones live in .demo-studio/pronounce.yaml
 theme: { cursor: halo }                # overrides on top of .demo-studio/theme.yaml; cursor: halo|arrow|dot; chapterSticky: true
-autoZoom: true                         # Screen Studio-style: zoom in on clicks/typing, out on overview beats (or a scale, e.g. 1.6)
+autoZoom: true                         # calm: gentle 1.25× only while typing (and on tiny click targets), ≥ 8 s apart, held ≥ 4 s; usually leave it off
 frame: { padding: 72, radius: 20 }     # default from the project theme; background: aurora|midnight|sunset|mist|ocean|#hex|linear:#a,#b|image.jpg; false = full-bleed
 storageState: auth.json
 music: { file: bgm.mp3, volume: 0.1 }  # optional, auto-ducked under the voice
@@ -252,9 +252,25 @@ address, sentence patterns and pace, taken from professional Vietnamese vendor t
   wording, mixed forms of address, acronyms with no known reading, and what the voice will actually say.
 - Role-play scenes: `voices: {khach: {name: "Hải Đăng", label: "Anh Minh"}}` plus `as: khach` on a step.
 
+## Zoom sparingly
+
+Every zoom is a camera move the viewer's eyes must follow; zooming in and out on every click makes a
+video tiring to watch. Rules:
+
+- Default to **no zoom**: the full screen at 1920×1080 is readable. Point with `spotlight`, `circle`,
+  `underline`, `callout` instead.
+- `autoZoom: true` is the calm preset (`{scale: 1.25, on: [type], smallClick: 0.006, cooldownMs: 8000, minHoldMs: 4000}`):
+  it zooms gently while typing into a field, on click targets smaller than 0.6 % of the screen, never sooner
+  than 8 s after the last zoom change, and holds at least 4 s. Override fields with an object, e.g.
+  `autoZoom: {on: [type, click]}`; do not raise `scale` above 1.4.
+- Explicit `zoom:` at most ~3 times per video, only where small text must be read, scale 1.3–1.5
+  (`zoomScale` default 1.4). Never two zoom steps in a row, never `autoZoom` plus manual zooms.
+- `lint` warns on these; after a recording, `sync.json` lists every zoom (`zooms`) and the result notes
+  more than 3 zoom-ins a minute or an in-out under 4 s. Fix those before delivering.
+
 ## Gotchas
 
-- Zoom uses Chrome pinch-zoom. Pointer actions work while zoomed (page.mouse with zoom-aware coordinates); zoom resets only when the next target is off-screen, on goto/title/slide, or (autoZoom) on a beat with no pointer action.
+- Zoom uses Chrome pinch-zoom. Pointer actions work while zoomed (page.mouse with zoom-aware coordinates); zoom resets only when the next target is off-screen, on goto/title/slide, or (autoZoom) on a beat with no pointer action once the zoom has been held `minHoldMs`.
 - Headless runs use "Chrome for Testing" from the Playwright cache: branded Chrome 158+ quits headless sessions after ~30 s. If missing, run `demo-studio install`. Headed (live) uses system Chrome.
 - Ink colour defaults to `theme.ink`; keep 1–2 ink marks per beat — they auto-clear at the next `say` step.
 - Annotations auto-clear at each new `say` step (unless `keep: true`).
